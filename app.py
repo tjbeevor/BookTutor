@@ -149,22 +149,43 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     prompt = f"""
-    You are teaching: {topic.title}
-    Content to teach: {topic.content}
+    You are an expert tutor teaching: {topic.title}
+    Content to cover: {topic.content}
     
-    Create a focused lesson about this specific topic only. 
+    Create a comprehensive, engaging lesson that deeply explains the topic.
+    Include rich examples and real-world applications.
+    End with ONE thought-provoking question to check understanding.
+    
     Return your response in this exact JSON format:
     {{
-        "explanation": "Write a clear 2-3 paragraph explanation of the concept here",
-        "examples": "Write 2-3 concrete examples showing the concept in action here",
-        "question": "Write one specific assessment question here",
-        "expected_points": ["point1", "point2", "point3"]
+        "explanation": "Provide a detailed, well-structured explanation (4-5 paragraphs) that:
+            - Starts with a clear introduction of the concept
+            - Breaks down complex ideas into digestible parts
+            - Explains relationships and interconnections
+            - Uses clear, precise language
+            - Builds understanding progressively",
+        
+        "examples": "Provide 2-3 detailed, real-world examples that:
+            - Start with a simple, relatable example
+            - Progress to more complex, nuanced examples
+            - Explain why each example matters
+            - Connect examples to the main concepts
+            - Show practical applications",
+            
+        "question": "ONE thought-provoking question that:
+            - Tests deeper understanding
+            - Requires application of concepts
+            - Encourages critical thinking",
+            
+        "key_points": ["3-4 main points you expect to see in a good answer"]
     }}
 
     Important:
-    - Return only ONE JSON object
-    - Keep content focused on the current topic only
-    - Use only basic text - no markdown or special formatting
+    - Be thorough and detailed in explanations
+    - Use clear, engaging language
+    - Make real-world connections
+    - Focus on depth of understanding
+    - Avoid surface-level or obvious content
     """
     
     try:
@@ -225,27 +246,21 @@ def evaluate_response(answer: str, expected_points: List[str], topic: Topic, mod
     prompt = f"""
     Topic: {topic.title}
     Student's answer: {answer}
-    Expected key points: {', '.join(expected_points)}
+    Key points expected: {', '.join(expected_points)}
     
-    Evaluate the response thoroughly. Consider:
-    1. Whether key concepts are understood
-    2. If the application of knowledge is correct
-    3. The depth of understanding demonstrated
+    Provide constructive, encouraging feedback that:
+    1. Acknowledges what the student understood correctly
+    2. Identifies any gaps in understanding
+    3. Offers specific suggestions for improvement
+    4. Maintains a supportive, encouraging tone
     
     Return your evaluation in this exact JSON format:
     {{
-        "understanding_level": 85,
-        "feedback": "Your specific feedback here",
-        "mastered": true,
-        "missing_points": ["point1", "point2"]
+        "understanding_level": "number 0-100 indicating comprehension",
+        "feedback": "Detailed, constructive feedback that helps the student understand their strengths and areas for improvement",
+        "mastered": true/false,
+        "suggestion": "One specific suggestion for deeper understanding (only if needed)"
     }}
-
-    Important:
-    - Return only ONE JSON object
-    - Use only basic text - no special formatting
-    - understanding_level should be a number between 0 and 100
-    - mastered should be true or false
-    - missing_points should be a list of strings
     """
     
     try:
