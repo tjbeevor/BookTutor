@@ -232,18 +232,89 @@ def evaluate_response(answer: str, expected_points: List[str], topic: Topic, mod
     2. If the application of knowledge is correct
     3. The depth of understanding demonstrated
     
-    Return as JSON:
+    Return your evaluation in this exact JSON format:
     {{
-        "understanding_level": 0-100,
-        "feedback": "specific, encouraging feedback",
-        "mastered": true/false,
+        "understanding_level": 85,
+        "feedback": "Your specific feedback here",
+        "mastered": true,
         "missing_points": ["point1", "point2"]
     }}
+
+    Important:
+    - Return only ONE JSON object
+    - Use only basic text - no special formatting
+    - understanding_level should be a number between 0 and 100
+    - mastered should be true or false
+    - missing_points should be a list of strings
     """
     
     try:
         response = model.generate_content(prompt)
-        return json.loads(clean_json_string(response.text))
+        response_text = response.parts[0].text
+        
+        # Clean up the response
+        response_text = clean_json_string(response_text)
+        
+        # Extract the first complete JSON object
+        def extract_first_json(text):
+            start = text.find('{')
+            if start == -1:
+                return None
+            
+            count = 0
+            for i in range(start, len(text)):
+                if text[i] == '{':
+                    count += 1
+                elif text[i] == '}':
+                    count -= 1
+                    if count == 0:
+                        return text[start:i+1]
+            return None
+        
+        # Get the first complete JSON object
+        json_str = extract_first_json(response_text)
+        if not json_str:
+            raise ValueError("No valid JSON object found in response")
+            
+        # Clean up the extracted JSON
+        json_str = json_str.replace('\n', ' ')
+        json_str = json_str.replace('\r', ' ')
+        json_str = json_str.replace('\t', ' ')
+        json_str = json_str.replace('**', '')  # Remove markdown formatting
+        
+        try:
+            evaluation = json.loads(json_str)
+            
+            # Validate the response format
+            required_keys = ["understanding_level", "feedback", "mastered", "missing_points"]
+            if not all(key in evaluation for key in required_keys):
+                raise ValueError("Response missing required keys")
+                
+            # Ensure understanding_level is within bounds
+            evaluation["understanding_level"] = max(0, min(100, int(evaluation["understanding_level"])))
+            
+            # Ensure mastered is boolean
+            if isinstance(evaluation["mastered"], str):
+                evaluation["mastered"] = evaluation["mastered"].lower() == "true"
+                
+            # Ensure missing_points is a list
+            if not isinstance(evaluation["missing_points"], list):
+                evaluation["missing_points"] = []
+                
+            return evaluation
+            
+        except json.JSONDecodeError as e:
+            st.error(f"Failed to parse evaluation response: {str(e)}")
+            st.code(json_str)  # Display the problematic response
+            
+            # Fallback response
+            return {
+                "understanding_level": 0,
+                "feedback": "There was an error evaluating your response. Please try again.",
+                "mastered": False,
+                "missing_points": ["Unable to evaluate response"]
+            }
+            
     except Exception as e:
         st.error(f"Error evaluating response: {str(e)}")
         raise
