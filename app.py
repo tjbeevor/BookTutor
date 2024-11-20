@@ -28,65 +28,103 @@ class TutorialState:
             topic.completed = False
         self.questions_asked = 0
 
-# Initialize Gemini
 def init_gemini(api_key: str = None):
     if api_key:
         genai.configure(api_key=api_key)
         return genai.GenerativeModel('gemini-pro')
     return None
 
-# PDF Processing
 def process_pdf(pdf_file) -> str:
-    pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_file.read()))
-    text = ""
-    for page in pdf_reader.pages:
-        text += page.extract_text()
-    return text
+    try:
+        pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_file.read()))
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+        return text.strip()
+    except Exception as e:
+        st.error(f"Error reading PDF: {str(e)}")
+        raise
 
 def generate_tutorial_structure(content: str, model) -> List[Topic]:
-    prompt = f"""
-    Analyze the following educational content and create a structured tutorial outline.
-    Format the response as JSON with the following structure:
-    {{
+    # Improved prompt with explicit JSON formatting instructions
+    prompt = """
+    Analyze this educational content and create a structured tutorial outline.
+    Return ONLY valid JSON matching this exact structure, with no additional text:
+    {
         "topics": [
-            {{
+            {
                 "title": "Topic Title",
-                "content": "Main content to teach",
+                "content": "Main content to teach (2-3 sentences)",
                 "subtopics": [
-                    {{
+                    {
                         "title": "Subtopic Title",
-                        "content": "Subtopic content",
+                        "content": "Subtopic content (2-3 sentences)",
                         "subtopics": []
-                    }}
+                    }
                 ]
-            }}
+            }
         ]
-    }}
-    Content: {content[:10000]}  # Limit content length for API
-    """
+    }
+
+    Content to analyze:
+    """ + content[:5000]  # Reduced content length for better processing
     
-    response = model.generate_content(prompt)
-    structure = json.loads(response.text)
-    
-    def create_topics(topic_data) -> Topic:
-        return Topic(
-            title=topic_data["title"],
-            content=topic_data["content"],
-            subtopics=[create_topics(st) for st in topic_data.get("subtopics", [])]
-        )
-    
-    return [create_topics(t) for t in structure["topics"]]
+    try:
+        # Generate response
+        response = model.generate_content(prompt)
+        response_text = response.text.strip()
+        
+        # Debug logging
+        st.debug(f"Raw AI Response:\n{response_text}")
+        
+        # Try to find JSON in the response
+        try:
+            # First attempt: direct JSON parsing
+            structure = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Second attempt: try to find JSON object within the text
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+            if start_idx != -1 and end_idx != 0:
+                json_str = response_text[start_idx:end_idx]
+                structure = json.loads(json_str)
+            else:
+                raise ValueError("Could not find valid JSON in the response")
+        
+        # Validate structure
+        if "topics" not in structure:
+            raise ValueError("Response JSON missing 'topics' key")
+        
+        def create_topics(topic_data) -> Topic:
+            return Topic(
+                title=topic_data["title"],
+                content=topic_data["content"],
+                subtopics=[create_topics(st) for st in topic_data.get("subtopics", [])]
+            )
+        
+        return [create_topics(t) for t in structure["topics"]]
+        
+    except Exception as e:
+        st.error(f"Error generating tutorial structure: {str(e)}")
+        st.error("Raw AI Response:")
+        st.code(response.text)
+        raise
 
 def teach_topic(topic: Topic, model) -> str:
     prompt = f"""
-    Act as a tutor teaching the following topic: {topic.title}
+    Act as a tutor teaching this topic. Provide a clear explanation with examples,
+    and end with a relevant question to test understanding.
     
-    Content to teach: {topic.content}
-    
-    Provide a clear explanation with examples. End with a relevant question to test understanding.
+    TOPIC: {topic.title}
+    CONTENT TO TEACH: {topic.content}
     """
-    response = model.generate_content(prompt)
-    return response.text
+    
+    try:
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        st.error(f"Error in teaching topic: {str(e)}")
+        raise
 
 def evaluate_answer(answer: str, topic: Topic, model) -> tuple[bool, str]:
     prompt = f"""
@@ -94,16 +132,30 @@ def evaluate_answer(answer: str, topic: Topic, model) -> tuple[bool, str]:
     Content: {topic.content}
     Student's answer: {answer}
     
-    Evaluate if the student understood the concept. Respond with either:
-    UNDERSTOOD: [explanation] or
+    Evaluate if the student understood the concept.
+    Reply with EXACTLY one of these two formats:
+    UNDERSTOOD: [brief explanation]
+    or
     NOT_UNDERSTOOD: [explanation with additional help]
     """
-    response = model.generate_content(prompt)
-    understood = response.text.startswith("UNDERSTOOD")
-    explanation = response.text.split(": ", 1)[1]
-    return understood, explanation
+    
+    try:
+        response = model.generate_content(prompt)
+        response_text = response.text.strip()
+        
+        if response_text.startswith("UNDERSTOOD:"):
+            return True, response_text[11:].strip()
+        elif response_text.startswith("NOT_UNDERSTOOD:"):
+            return False, response_text[14:].strip()
+        else:
+            # Handle unexpected response format
+            st.warning("Unexpected response format from AI. Treating as not understood.")
+            return False, "Let's try to understand this topic better."
+            
+    except Exception as e:
+        st.error(f"Error evaluating answer: {str(e)}")
+        raise
 
-# Streamlit UI
 def main():
     st.title("AI Educational Tutor")
     
@@ -113,12 +165,9 @@ def main():
     
     # API Key Management
     api_key = None
-    
-    # Try to get API key from secrets
     try:
         api_key = st.secrets["GEMINI_API_KEY"]
     except KeyError:
-        # If not in secrets, show input field
         st.warning("⚠️ Gemini API Key not found in secrets.")
         api_key_input = st.text_input(
             "Please enter your Gemini API Key:",
@@ -133,15 +182,10 @@ def main():
         No API key provided. To run this application, you need to either:
         1. Set up `.streamlit/secrets.toml` with your GEMINI_API_KEY, or
         2. Enter your API key in the field above
-        
-        To get an API key:
-        1. Go to https://makersuite.google.com/app/apikey
-        2. Create or select a project
-        3. Generate an API key
         """)
         st.stop()
     
-    # Initialize model with API key
+    # Initialize model
     if 'model' not in st.session_state:
         st.session_state.model = init_gemini(api_key)
     
@@ -164,16 +208,22 @@ def main():
             with st.spinner("Processing PDF content..."):
                 try:
                     content = process_pdf(pdf_file)
+                    if not content.strip():
+                        st.error("No text could be extracted from the PDF. Please ensure the PDF contains readable text.")
+                        return
+                        
+                    st.info("PDF processed successfully. Generating tutorial structure...")
                     st.session_state.tutorial_state.topics = generate_tutorial_structure(
                         content, st.session_state.model
                     )
+                    st.success("Tutorial structure generated successfully!")
                 except Exception as e:
-                    st.error(f"Error processing PDF: {str(e)}")
+                    st.error(f"Error processing content: {str(e)}")
                     return
         
         # Display current topic
         state = st.session_state.tutorial_state
-        if state.current_topic_index < len(state.topics):
+        if state.topics and state.current_topic_index < len(state.topics):
             current_topic = state.topics[state.current_topic_index]
             
             st.subheader(f"Topic: {current_topic.title}")
@@ -208,7 +258,7 @@ def main():
                                 st.experimental_rerun()
                 except Exception as e:
                     st.error(f"Error during tutorial: {str(e)}")
-        else:
+        elif state.topics:
             st.success("Congratulations! You've completed all topics!")
 
 if __name__ == "__main__":
