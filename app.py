@@ -29,10 +29,11 @@ class TutorialState:
         self.questions_asked = 0
 
 # Initialize Gemini
-def init_gemini():
-    api_key = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel('gemini-pro')
+def init_gemini(api_key: str = None):
+    if api_key:
+        genai.configure(api_key=api_key)
+        return genai.GenerativeModel('gemini-pro')
+    return None
 
 # PDF Processing
 def process_pdf(pdf_file) -> str:
@@ -109,8 +110,40 @@ def main():
     # Initialize session state
     if 'tutorial_state' not in st.session_state:
         st.session_state.tutorial_state = TutorialState()
+    
+    # API Key Management
+    api_key = None
+    
+    # Try to get API key from secrets
+    try:
+        api_key = st.secrets["GEMINI_API_KEY"]
+    except KeyError:
+        # If not in secrets, show input field
+        st.warning("⚠️ Gemini API Key not found in secrets.")
+        api_key_input = st.text_input(
+            "Please enter your Gemini API Key:",
+            type="password",
+            help="Get your API key from Google AI Studio (https://makersuite.google.com/app/apikey)"
+        )
+        if api_key_input:
+            api_key = api_key_input
+            
+    if not api_key:
+        st.error("""
+        No API key provided. To run this application, you need to either:
+        1. Set up `.streamlit/secrets.toml` with your GEMINI_API_KEY, or
+        2. Enter your API key in the field above
+        
+        To get an API key:
+        1. Go to https://makersuite.google.com/app/apikey
+        2. Create or select a project
+        3. Generate an API key
+        """)
+        st.stop()
+    
+    # Initialize model with API key
     if 'model' not in st.session_state:
-        st.session_state.model = init_gemini()
+        st.session_state.model = init_gemini(api_key)
     
     # File upload
     pdf_file = st.file_uploader("Upload Educational PDF", type="pdf", accept_multiple_files=False)
@@ -129,10 +162,14 @@ def main():
         # Process PDF if not already processed
         if not st.session_state.tutorial_state.topics:
             with st.spinner("Processing PDF content..."):
-                content = process_pdf(pdf_file)
-                st.session_state.tutorial_state.topics = generate_tutorial_structure(
-                    content, st.session_state.model
-                )
+                try:
+                    content = process_pdf(pdf_file)
+                    st.session_state.tutorial_state.topics = generate_tutorial_structure(
+                        content, st.session_state.model
+                    )
+                except Exception as e:
+                    st.error(f"Error processing PDF: {str(e)}")
+                    return
         
         # Display current topic
         state = st.session_state.tutorial_state
@@ -142,32 +179,35 @@ def main():
             st.subheader(f"Topic: {current_topic.title}")
             
             if not current_topic.completed:
-                # Teaching phase
-                teaching_content = teach_topic(current_topic, st.session_state.model)
-                st.markdown(teaching_content)
-                
-                # Get student's answer
-                student_answer = st.text_area("Your Answer:")
-                if st.button("Submit"):
-                    understood, explanation = evaluate_answer(
-                        student_answer, current_topic, st.session_state.model
-                    )
+                try:
+                    # Teaching phase
+                    teaching_content = teach_topic(current_topic, st.session_state.model)
+                    st.markdown(teaching_content)
                     
-                    if understood:
-                        st.success(explanation)
-                        current_topic.completed = True
-                        state.current_topic_index += 1
-                        state.questions_asked = 0
-                        st.experimental_rerun()
-                    else:
-                        st.warning(explanation)
-                        state.questions_asked += 1
-                        if state.questions_asked >= state.max_questions_per_topic:
-                            st.info("Let's move on to the next topic.")
+                    # Get student's answer
+                    student_answer = st.text_area("Your Answer:")
+                    if st.button("Submit"):
+                        understood, explanation = evaluate_answer(
+                            student_answer, current_topic, st.session_state.model
+                        )
+                        
+                        if understood:
+                            st.success(explanation)
                             current_topic.completed = True
                             state.current_topic_index += 1
                             state.questions_asked = 0
                             st.experimental_rerun()
+                        else:
+                            st.warning(explanation)
+                            state.questions_asked += 1
+                            if state.questions_asked >= state.max_questions_per_topic:
+                                st.info("Let's move on to the next topic.")
+                                current_topic.completed = True
+                                state.current_topic_index += 1
+                                state.questions_asked = 0
+                                st.experimental_rerun()
+                except Exception as e:
+                    st.error(f"Error during tutorial: {str(e)}")
         else:
             st.success("Congratulations! You've completed all topics!")
 
