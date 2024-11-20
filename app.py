@@ -267,16 +267,68 @@ def evaluate_response(answer: str, expected_points: List[str], topic: Topic, mod
         response = model.generate_content(prompt)
         response_text = response.parts[0].text
         
-        # Clean up and parse response...
-        evaluation = json.loads(json_str)  # (keeping existing JSON parsing code)
+        # Clean up the response
+        response_text = clean_json_string(response_text)
         
-        return evaluation
+        # Extract the first complete JSON object
+        def extract_first_json(text):
+            start = text.find('{')
+            if start == -1:
+                return None
+            
+            count = 0
+            for i in range(start, len(text)):
+                if text[i] == '{':
+                    count += 1
+                elif text[i] == '}':
+                    count -= 1
+                    if count == 0:
+                        return text[start:i+1]
+            return None
+        
+        # Get the first complete JSON object
+        json_str = extract_first_json(response_text)
+        if not json_str:
+            raise ValueError("No valid JSON object found in response")
+            
+        # Clean up the extracted JSON
+        json_str = json_str.replace('\n', ' ')
+        json_str = json_str.replace('\r', ' ')
+        json_str = json_str.replace('\t', ' ')
+        json_str = json_str.replace('**', '')  # Remove markdown formatting
+        
+        try:
+            evaluation = json.loads(json_str)
+            
+            # Validate the response format
+            required_keys = ["feedback", "complete_answer", "mastered"]
+            if not all(key in evaluation for key in required_keys):
+                raise ValueError("Response missing required keys")
+                
+            # Ensure mastered is boolean
+            if isinstance(evaluation["mastered"], str):
+                evaluation["mastered"] = evaluation["mastered"].lower() == "true"
+                
+            return evaluation
+            
+        except json.JSONDecodeError as e:
+            st.error(f"Failed to parse evaluation response: {str(e)}")
+            st.code(json_str)
+            
+            # Fallback response
+            return {
+                "feedback": "There was an error evaluating your response. Moving to the next topic.",
+                "complete_answer": "Let me provide the complete explanation before we move on:\n\n" + topic.content,
+                "mastered": False
+            }
             
     except Exception as e:
         st.error(f"Error evaluating response: {str(e)}")
+        
+        # Fallback response
         return {
-            "feedback": "There was an error evaluating your response.",
-            "complete_answer": "Let's continue with the next topic.",
+            "feedback": "There was an error processing your response. Let's review the correct answer and move forward.",
+            "complete_answer": f"Here's what you should understand about this topic:\n\n{topic.content}",
             "mastered": False
         }
 
