@@ -178,23 +178,22 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     
     Create a comprehensive lesson and return it in this exact JSON format:
     {{
-        "explanation": "Your detailed lesson content here. Use markdown formatting for headers and bullet points.",
-        "examples": "Your practical examples here. Format code examples with ```python",
+        "explanation": "Your detailed lesson content here",
+        "examples": "Your practical examples here",
         "question": "Your knowledge check question here",
         "key_points": ["point1", "point2", "point3"]
     }}
 
     Guidelines for your response:
-
     1. Explanation should:
-       - Start with a clear introduction that hooks interest
+       - Start with a clear introduction
        - Break down core concepts step by step
-       - Use clear language and build on previous knowledge
+       - Use clear language
+       - Build on previous knowledge
        - Explain relationships between ideas
-       - Be 3-4 well-structured paragraphs
+       - Be 3-4 paragraphs long
        - Use bullet points for key concepts
-       - Include section headers for better organization
-       - Focus on building deep understanding
+       - Show practical relevance
 
     2. Examples should:
        - Start with simple examples
@@ -202,42 +201,27 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
        - Show real-world relevance
        - Connect to main concepts
        - Include specific scenarios
-       - For code examples use:
-         ```python
-         your_code_here
-         ```
-       - Include explanation before each example
-       - Show practical, runnable code
+       - Use code examples where appropriate
+       - Explain each example's purpose
 
     3. Question should:
        - Test both concepts and applications
        - Require analytical thinking
        - Be specific to the material covered
-       - Connect multiple concepts
-       - Test deep understanding
-       - Ask for specific examples or applications
+       - Focus on key learning points
+       - Encourage critical thinking
 
     4. Key points should:
        - List 3-4 main concepts
        - Include theoretical and practical points
        - Focus on essential learning outcomes
-       - Cover both concepts and applications
-       - Reflect the most important takeaways
-
-    Formatting Guidelines:
-    - Use markdown headers with # for sections
-    - Use bullet points with * for lists
-    - Use code blocks with ```python for code
-    - Keep formatting consistent and clean
-    - Avoid special characters that might break JSON
-    - Use proper spacing and organization
 
     IMPORTANT: 
-    - Ensure your response is in valid JSON format with these exact keys
-    - Make content comprehensive yet clear
-    - Focus on building understanding progressively
-    - Connect theory to practice
-    - Make examples relevant and practical
+    - Keep all content within the JSON structure
+    - Focus on depth and clarity
+    - Make examples concrete and practical
+    - Ensure content builds understanding progressively
+    - Keep formatting simple and clean
     """
     
     try:
@@ -275,15 +259,21 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
         json_str = json_str.replace('**', '')
         
         try:
-            return json.loads(json_str)
+            content = json.loads(json_str)
+            
+            # Validate content
+            if not all(key in content for key in ["explanation", "examples", "question", "key_points"]):
+                raise ValueError("Missing required keys in response")
+            
+            return content
+            
         except json.JSONDecodeError as e:
             st.error(f"Failed to parse teaching content JSON: {str(e)}")
-            # Fallback response
             return {
-                "explanation": "Let's explore " + topic.title + ".\n\n" + topic.content,
-                "examples": "We'll look at some practical applications of these concepts.",
-                "question": "What are the key concepts you understood from this topic?",
-                "key_points": ["Understanding of core concepts", "Practical application", "Key principles"]
+                "explanation": topic.content,
+                "examples": "Let's look at some concrete examples to understand this better.",
+                "question": "Based on what we've covered, explain the key concepts in your own words.",
+                "key_points": ["Core concepts", "Practical applications", "Key principles"]
             }
             
     except Exception as e:
