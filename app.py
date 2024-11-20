@@ -152,8 +152,8 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     You are teaching: {topic.title}
     Content to teach: {topic.content}
     
-    Create a lesson with these exact sections.
-    Format your response EXACTLY as shown, with no deviations:
+    Create a focused lesson about this specific topic only. 
+    Return your response in this exact JSON format:
     {{
         "explanation": "Write a clear 2-3 paragraph explanation of the concept here",
         "examples": "Write 2-3 concrete examples showing the concept in action here",
@@ -162,33 +162,53 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     }}
 
     Important:
-    - Use only basic text - no special characters or formatting
-    - Keep paragraphs simple and well-structured
-    - Make examples clear and relatable
-    - Make the question specific and focused on application
+    - Return only ONE JSON object
+    - Keep content focused on the current topic only
+    - Use only basic text - no markdown or special formatting
     """
     
     try:
         response = model.generate_content(prompt)
         response_text = response.parts[0].text
+        
+        # Clean up the response
         response_text = clean_json_string(response_text)
         
-        # Additional JSON cleanup
-        response_text = response_text.replace('\n', ' ')
-        response_text = response_text.replace('\r', ' ')
-        response_text = response_text.replace('\t', ' ')
-        
-        # Try to fix common JSON formatting issues
-        if not response_text.startswith('{'):
-            response_text = '{' + response_text.split('{', 1)[1]
-        if not response_text.endswith('}'):
-            response_text = response_text.rsplit('}', 1)[0] + '}'
+        # Extract the first complete JSON object
+        def extract_first_json(text):
+            # Find the first opening brace
+            start = text.find('{')
+            if start == -1:
+                return None
             
+            # Track nested braces
+            count = 0
+            for i in range(start, len(text)):
+                if text[i] == '{':
+                    count += 1
+                elif text[i] == '}':
+                    count -= 1
+                    if count == 0:
+                        # Found complete JSON object
+                        return text[start:i+1]
+            return None
+        
+        # Get the first complete JSON object
+        json_str = extract_first_json(response_text)
+        if not json_str:
+            raise ValueError("No valid JSON object found in response")
+            
+        # Clean up the extracted JSON
+        json_str = json_str.replace('\n', ' ')
+        json_str = json_str.replace('\r', ' ')
+        json_str = json_str.replace('\t', ' ')
+        json_str = json_str.replace('**', '')  # Remove markdown formatting
+        
         try:
-            return json.loads(response_text)
+            return json.loads(json_str)
         except json.JSONDecodeError as e:
             st.error(f"Failed to parse JSON response: {str(e)}")
-            st.code(response_text)  # Display the problematic response
+            st.code(json_str)  # Display the problematic response
             
             # Fallback response
             return {
