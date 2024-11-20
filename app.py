@@ -390,12 +390,10 @@ def main():
 ### 📚 Understanding the Concepts
 {teaching_content["explanation"]}
 
-### 🔍 Practical Examples & Applications
+### 🔍 Practical Examples
 {teaching_content["examples"]}
 
-### 💡 Knowledge Check
-Based on what we've just learned, consider this question:
-
+### 💡 Understanding Check
 {teaching_content["question"]}"""
                     
                     with st.chat_message("assistant"):
