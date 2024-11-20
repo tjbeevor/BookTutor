@@ -293,7 +293,7 @@ def main():
                 
                 # Check if we need to generate new content
                 if len(state.conversation_history) == 0 or (
-                    len(state.conversation_history) > 0 or (
+                    len(state.conversation_history) > 0 and
                     state.conversation_history[-1]["role"] == "user"
                 ):
                     teaching_content = generate_teaching_message(
