@@ -178,20 +178,23 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     
     Create a comprehensive lesson and return it in this exact JSON format:
     {{
-        "explanation": "Your detailed lesson content here",
-        "examples": "Your practical examples here",
+        "explanation": "Your detailed lesson content here. Use markdown formatting for headers and bullet points.",
+        "examples": "Your practical examples here. Format code examples with ```python",
         "question": "Your knowledge check question here",
         "key_points": ["point1", "point2", "point3"]
     }}
 
     Guidelines for your response:
+
     1. Explanation should:
-       - Start with a clear introduction
+       - Start with a clear introduction that hooks interest
        - Break down core concepts step by step
-       - Use clear language
-       - Build on previous knowledge
+       - Use clear language and build on previous knowledge
        - Explain relationships between ideas
-       - Be 3-4 paragraphs long
+       - Be 3-4 well-structured paragraphs
+       - Use bullet points for key concepts
+       - Include section headers for better organization
+       - Focus on building deep understanding
 
     2. Examples should:
        - Start with simple examples
@@ -199,19 +202,42 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
        - Show real-world relevance
        - Connect to main concepts
        - Include specific scenarios
+       - For code examples use:
+         ```python
+         your_code_here
+         ```
+       - Include explanation before each example
+       - Show practical, runnable code
 
     3. Question should:
        - Test both concepts and applications
        - Require analytical thinking
        - Be specific to the material covered
+       - Connect multiple concepts
+       - Test deep understanding
+       - Ask for specific examples or applications
 
     4. Key points should:
        - List 3-4 main concepts
        - Include theoretical and practical points
        - Focus on essential learning outcomes
+       - Cover both concepts and applications
+       - Reflect the most important takeaways
 
-    IMPORTANT: Ensure your response is in valid JSON format with these exact keys.
-    Do not use special characters or formatting in the JSON values.
+    Formatting Guidelines:
+    - Use markdown headers with # for sections
+    - Use bullet points with * for lists
+    - Use code blocks with ```python for code
+    - Keep formatting consistent and clean
+    - Avoid special characters that might break JSON
+    - Use proper spacing and organization
+
+    IMPORTANT: 
+    - Ensure your response is in valid JSON format with these exact keys
+    - Make content comprehensive yet clear
+    - Focus on building understanding progressively
+    - Connect theory to practice
+    - Make examples relevant and practical
     """
     
     try:
