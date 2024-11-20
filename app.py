@@ -236,17 +236,17 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
                 "explanation": "There was an error generating the lesson content. Please try again.",
                 "examples": "Examples could not be generated.",
                 "question": "Please refresh the page to try again.",
-                "expected_points": ["Understanding of core concepts", "Application of knowledge"]
+                "key_points": ["Understanding of core concepts", "Application of knowledge"]
             }
             
     except Exception as e:
         st.error(f"Error generating teaching content: {str(e)}")
         raise
-def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
+def evaluate_response(answer: str, key_points: List[str], topic: Topic, model) -> dict:
     prompt = f"""
     Topic: {topic.title}
     Student's answer: {answer}
-    Key points expected: {', '.join(expected_points)}
+    Key points expected: {', '.join(key_points)}
     
     Provide constructive, encouraging feedback that:
     1. Acknowledges what the student understood correctly
@@ -446,7 +446,7 @@ def main():
                         "content": teaching_content["question"]
                     })
                     # Store expected points for evaluation
-                    st.session_state.expected_points = teaching_content["expected_points"]
+                    st.session_state.key_points = teaching_content["key_points"]
     
     # Handle user response
     user_input = st.chat_input("Your answer...")
@@ -462,7 +462,7 @@ def main():
         # Evaluate understanding
         evaluation = evaluate_response(
             user_input,
-            st.session_state.expected_points,
+            st.session_state.key_points,
             current_topic,
             st.session_state.model
         )
