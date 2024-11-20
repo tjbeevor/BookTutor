@@ -378,57 +378,57 @@ def main():
             current_topic = state.get_current_topic()
             
             if current_topic:
-        if not current_topic.completed:
-            # Generate and display teaching content
-            with st.spinner("Generating lesson content..."):
-                teaching_content = generate_teaching_content(
-                    current_topic,
-                    state.conversation_history,
-                    st.session_state.model
-                )
-            
-            current_question = display_lesson(teaching_content, state)
-            
-            # Get and evaluate student's answer
-            student_answer = st.text_area("Your Answer:", key=f"answer_{len(state.conversation_history)}")
-            if st.button("Submit", key=f"submit_{len(state.conversation_history)}"):
-                with st.spinner("Evaluating your answer..."):
-                    understood, feedback, missing_concepts = evaluate_answer(
-                        student_answer,
-                        current_question,
-                        current_topic,
-                        st.session_state.model
-                    )
+                if not current_topic.completed:
+                    # Generate and display teaching content
+                    with st.spinner("Generating lesson content..."):
+                        teaching_content = generate_teaching_content(
+                            current_topic,
+                            state.conversation_history,
+                            st.session_state.model
+                        )
                     
-                    state.conversation_history.append({
-                        "role": "user",
-                        "content": student_answer
-                    })
+                    current_question = display_lesson(teaching_content, state)
                     
-                    if understood:
-                        st.success(feedback)
-                        if st.session_state.current_question_index < len(teaching_content['questions']) - 1:
-                            st.session_state.current_question_index += 1
-                            st.experimental_rerun()
-                        else:
-                            current_topic.completed = True
-                            st.session_state.current_question_index = 0
-                            if not state.advance():
-                                st.balloons()
-                                st.success("🎉 Congratulations! You've completed the tutorial!")
-                            st.experimental_rerun()
-                    else:
-                        st.warning(feedback)
-                        if missing_concepts:
-                            st.info("Consider reviewing these concepts: " + ", ".join(missing_concepts))
-                        
-                        state.questions_asked += 1
-                        if state.questions_asked >= state.max_questions_per_topic:
-                            st.info("Let's move on to ensure we cover all topics.")
-                            current_topic.completed = True
-                            if not state.advance():
-                                st.success("Tutorial completed!")
-                            st.experimental_rerun()
+                    # Get and evaluate student's answer
+                    student_answer = st.text_area("Your Answer:", key=f"answer_{len(state.conversation_history)}")
+                    if st.button("Submit", key=f"submit_{len(state.conversation_history)}"):
+                        with st.spinner("Evaluating your answer..."):
+                            understood, feedback, missing_concepts = evaluate_answer(
+                                student_answer,
+                                current_question,
+                                current_topic,
+                                st.session_state.model
+                            )
+                            
+                            state.conversation_history.append({
+                                "role": "user",
+                                "content": student_answer
+                            })
+                            
+                            if understood:
+                                st.success(feedback)
+                                if st.session_state.current_question_index < len(teaching_content['questions']) - 1:
+                                    st.session_state.current_question_index += 1
+                                    st.experimental_rerun()
+                                else:
+                                    current_topic.completed = True
+                                    st.session_state.current_question_index = 0
+                                    if not state.advance():
+                                        st.balloons()
+                                        st.success("🎉 Congratulations! You've completed the tutorial!")
+                                    st.experimental_rerun()
+                            else:
+                                st.warning(feedback)
+                                if missing_concepts:
+                                    st.info("Consider reviewing these concepts: " + ", ".join(missing_concepts))
+                                
+                                state.questions_asked += 1
+                                if state.questions_asked >= state.max_questions_per_topic:
+                                    st.info("Let's move on to ensure we cover all topics.")
+                                    current_topic.completed = True
+                                    if not state.advance():
+                                        st.success("Tutorial completed!")
+                                    st.experimental_rerun()
     
     with col2:
         # Topic Tree and Controls
@@ -450,6 +450,6 @@ def main():
                 for j, subtopic in enumerate(topic.subtopics, 1):
                     status = "✅" if subtopic.completed else "📍" if (i-1 == state.current_topic_index and j-1 == state.current_subtopic_index) else "⭕️"
                     st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{status} {i}.{j} {subtopic.title}")
- 
+
 if __name__ == "__main__":
     main()
