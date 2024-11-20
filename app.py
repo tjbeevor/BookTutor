@@ -176,66 +176,88 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     You are an expert teacher presenting: {topic.title}
     Content to teach: {topic.content}
     
-    Create a comprehensive lesson following this pedagogical structure.
-    Return your response in this exact JSON format:
+    Create a comprehensive lesson and return it in this exact JSON format:
     {{
-        "explanation": "Provide a detailed lesson that:
-            - Starts with a clear introduction that hooks the learner's interest
-            - Breaks down the core concepts step by step
-            - Uses clear language and builds on previous knowledge
-            - Explains the relationships between ideas
-            - Includes relevant background information
-            - Emphasizes key principles and their importance
-            - Concludes with a summary of main points
-            The explanation should be 3-4 well-structured paragraphs.",
-            
-        "examples": "Provide 3-4 detailed, real-world examples that:
-            - Start with a simple, foundational example
-            - Progress to more complex, practical applications
-            - Show how the concepts are used in real situations
-            - Connect back to the main concepts
-            - Demonstrate practical relevance
-            - Include specific scenarios and outcomes
-            Format with clear numbering and explanations.",
-            
-        "question": "Create a thought-provoking question that:
-            - Tests understanding of both concepts and applications
-            - Requires analytical thinking
-            - Asks for specific examples or applications
-            - Connects multiple concepts together
-            Make it specific and focused on the material just covered.",
-            
-        "key_points": [
-            "List 3-4 specific points you expect in a thorough answer",
-            "Include both theoretical understanding and practical application",
-            "Focus on the key concepts and examples discussed"
-        ]
+        "explanation": "Your detailed lesson content here",
+        "examples": "Your practical examples here",
+        "question": "Your knowledge check question here",
+        "key_points": ["point1", "point2", "point3"]
     }}
 
-    Important guidelines:
-    - Be thorough and detailed in all sections
-    - Maintain a clear teaching progression
-    - Connect concepts to real-world applications
-    - Use engaging, clear language
-    - Focus on building deep understanding
-    - Ensure examples directly support the concepts
-    - Make the knowledge check meaningful and specific to the lesson
+    Guidelines for your response:
+    1. Explanation should:
+       - Start with a clear introduction
+       - Break down core concepts step by step
+       - Use clear language
+       - Build on previous knowledge
+       - Explain relationships between ideas
+       - Be 3-4 paragraphs long
+
+    2. Examples should:
+       - Start with simple examples
+       - Progress to complex applications
+       - Show real-world relevance
+       - Connect to main concepts
+       - Include specific scenarios
+
+    3. Question should:
+       - Test both concepts and applications
+       - Require analytical thinking
+       - Be specific to the material covered
+
+    4. Key points should:
+       - List 3-4 main concepts
+       - Include theoretical and practical points
+       - Focus on essential learning outcomes
+
+    IMPORTANT: Ensure your response is in valid JSON format with these exact keys.
+    Do not use special characters or formatting in the JSON values.
     """
     
     try:
         response = model.generate_content(prompt)
         response_text = response.parts[0].text
-        cleaned_json = clean_json_string(response_text)
+        
+        # Clean up the response
+        response_text = clean_json_string(response_text)
+        
+        # Extract the first complete JSON object
+        def extract_first_json(text):
+            start = text.find('{')
+            if start == -1:
+                return None
+            
+            count = 0
+            for i in range(start, len(text)):
+                if text[i] == '{':
+                    count += 1
+                elif text[i] == '}':
+                    count -= 1
+                    if count == 0:
+                        return text[start:i+1]
+            return None
+        
+        # Get the first complete JSON object
+        json_str = extract_first_json(response_text)
+        if not json_str:
+            raise ValueError("No valid JSON object found in response")
+            
+        # Clean up the extracted JSON
+        json_str = json_str.replace('\n', ' ')
+        json_str = json_str.replace('\r', ' ')
+        json_str = json_str.replace('\t', ' ')
+        json_str = json_str.replace('**', '')
         
         try:
-            return json.loads(cleaned_json)
+            return json.loads(json_str)
         except json.JSONDecodeError as e:
-            st.error(f"Failed to parse JSON response: {str(e)}")
+            st.error(f"Failed to parse teaching content JSON: {str(e)}")
+            # Fallback response
             return {
-                "explanation": "Error generating content. Please refresh the page.",
-                "examples": ["Example content unavailable."],
-                "question": "Basic comprehension question",
-                "key_points": ["Understanding of main concepts"]
+                "explanation": "Let's explore " + topic.title + ".\n\n" + topic.content,
+                "examples": "We'll look at some practical applications of these concepts.",
+                "question": "What are the key concepts you understood from this topic?",
+                "key_points": ["Understanding of core concepts", "Practical application", "Key principles"]
             }
             
     except Exception as e:
