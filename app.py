@@ -46,7 +46,6 @@ def process_pdf(pdf_file) -> str:
         raise
 
 def generate_tutorial_structure(content: str, model) -> List[Topic]:
-    # Improved prompt with explicit JSON formatting instructions
     prompt = """
     Analyze this educational content and create a structured tutorial outline.
     Return ONLY valid JSON matching this exact structure, with no additional text:
@@ -67,22 +66,17 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
     }
 
     Content to analyze:
-    """ + content[:5000]  # Reduced content length for better processing
+    """ + content[:5000]
     
     try:
-        # Generate response
         response = model.generate_content(prompt)
         response_text = response.text.strip()
         
-        # Debug logging
-        st.debug(f"Raw AI Response:\n{response_text}")
+        st.write("Processing tutorial structure...")
         
-        # Try to find JSON in the response
         try:
-            # First attempt: direct JSON parsing
             structure = json.loads(response_text)
         except json.JSONDecodeError:
-            # Second attempt: try to find JSON object within the text
             start_idx = response_text.find('{')
             end_idx = response_text.rfind('}') + 1
             if start_idx != -1 and end_idx != 0:
@@ -91,7 +85,6 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
             else:
                 raise ValueError("Could not find valid JSON in the response")
         
-        # Validate structure
         if "topics" not in structure:
             raise ValueError("Response JSON missing 'topics' key")
         
@@ -102,21 +95,28 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
                 subtopics=[create_topics(st) for st in topic_data.get("subtopics", [])]
             )
         
-        return [create_topics(t) for t in structure["topics"]]
+        topics = [create_topics(t) for t in structure["topics"]]
+        st.success(f"Successfully generated {len(topics)} topics!")
+        return topics
         
     except Exception as e:
         st.error(f"Error generating tutorial structure: {str(e)}")
         st.error("Raw AI Response:")
-        st.code(response.text)
+        st.code(response_text)
         raise
 
 def teach_topic(topic: Topic, model) -> str:
     prompt = f"""
-    Act as a tutor teaching this topic. Provide a clear explanation with examples,
-    and end with a relevant question to test understanding.
+    Act as a tutor teaching this topic. Create a comprehensive lesson with the following structure:
+    1. Brief introduction
+    2. Main concept explanation
+    3. Real-world example
+    4. Practice question to test understanding
     
     TOPIC: {topic.title}
     CONTENT TO TEACH: {topic.content}
+    
+    End your response with exactly one clear question for the student to answer.
     """
     
     try:
@@ -148,7 +148,6 @@ def evaluate_answer(answer: str, topic: Topic, model) -> tuple[bool, str]:
         elif response_text.startswith("NOT_UNDERSTOOD:"):
             return False, response_text[14:].strip()
         else:
-            # Handle unexpected response format
             st.warning("Unexpected response format from AI. Treating as not understood.")
             return False, "Let's try to understand this topic better."
             
@@ -192,10 +191,15 @@ def main():
     # File upload
     pdf_file = st.file_uploader("Upload Educational PDF", type="pdf", accept_multiple_files=False)
     
-    # Reset button
+    # Reset button with confirmation
     if st.button("Reset Tutorial"):
-        st.session_state.tutorial_state.reset()
-        st.experimental_rerun()
+        if st.session_state.tutorial_state.topics:
+            if st.button("Confirm Reset"):
+                st.session_state.tutorial_state.reset()
+                st.experimental_rerun()
+        else:
+            st.session_state.tutorial_state.reset()
+            st.experimental_rerun()
     
     if pdf_file:
         # Check file size
@@ -213,33 +217,44 @@ def main():
                         return
                         
                     st.info("PDF processed successfully. Generating tutorial structure...")
-                    st.session_state.tutorial_state.topics = generate_tutorial_structure(
-                        content, st.session_state.model
-                    )
-                    st.success("Tutorial structure generated successfully!")
+                    try:
+                        st.session_state.tutorial_state.topics = generate_tutorial_structure(
+                            content, st.session_state.model
+                        )
+                        st.success(f"Tutorial structure generated with {len(st.session_state.tutorial_state.topics)} topics!")
+                    except Exception as e:
+                        st.error("Error in tutorial structure generation. Please try again.")
+                        st.stop()
                 except Exception as e:
                     st.error(f"Error processing content: {str(e)}")
-                    return
+                    st.stop()
         
         # Display current topic
         state = st.session_state.tutorial_state
         if state.topics and state.current_topic_index < len(state.topics):
             current_topic = state.topics[state.current_topic_index]
             
+            # Display progress
+            progress = (state.current_topic_index / len(state.topics)) * 100
+            st.progress(progress)
+            st.write(f"Progress: {progress:.1f}% ({state.current_topic_index + 1}/{len(state.topics)} topics)")
+            
             st.subheader(f"Topic: {current_topic.title}")
             
             if not current_topic.completed:
                 try:
                     # Teaching phase
-                    teaching_content = teach_topic(current_topic, st.session_state.model)
+                    with st.spinner("Generating lesson content..."):
+                        teaching_content = teach_topic(current_topic, st.session_state.model)
                     st.markdown(teaching_content)
                     
                     # Get student's answer
-                    student_answer = st.text_area("Your Answer:")
-                    if st.button("Submit"):
-                        understood, explanation = evaluate_answer(
-                            student_answer, current_topic, st.session_state.model
-                        )
+                    student_answer = st.text_area("Your Answer:", key=f"answer_{state.current_topic_index}")
+                    if st.button("Submit Answer", key=f"submit_{state.current_topic_index}"):
+                        with st.spinner("Evaluating your answer..."):
+                            understood, explanation = evaluate_answer(
+                                student_answer, current_topic, st.session_state.model
+                            )
                         
                         if understood:
                             st.success(explanation)
@@ -251,7 +266,7 @@ def main():
                             st.warning(explanation)
                             state.questions_asked += 1
                             if state.questions_asked >= state.max_questions_per_topic:
-                                st.info("Let's move on to the next topic.")
+                                st.info("Let's move on to the next topic to maintain progress.")
                                 current_topic.completed = True
                                 state.current_topic_index += 1
                                 state.questions_asked = 0
@@ -259,7 +274,8 @@ def main():
                 except Exception as e:
                     st.error(f"Error during tutorial: {str(e)}")
         elif state.topics:
-            st.success("Congratulations! You've completed all topics!")
+            st.success("🎉 Congratulations! You've completed all topics!")
+            st.balloons()
 
 if __name__ == "__main__":
     main()
