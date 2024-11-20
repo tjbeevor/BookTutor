@@ -317,7 +317,7 @@ def main():
 
                         # Question section
                         st.markdown("### Knowledge Check")
-                        st.markdown(teaching_content["question"]
+                        st.markdown(teaching_content["question"])
 
                     state.conversation_history.append({
                         "role": "assistant",
