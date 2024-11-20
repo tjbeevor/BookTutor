@@ -170,7 +170,8 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     
     try:
         response = model.generate_content(prompt)
-        response_text = clean_json_string(response.text)
+        response_text = response.parts[0].text
+        response_text = clean_json_string(response_text)
         
         # Additional JSON cleanup
         response_text = response_text.replace('\n', ' ')
