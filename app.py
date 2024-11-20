@@ -5,6 +5,7 @@ import io
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 import json
+import time
 
 @dataclass
 class Topic:
@@ -327,16 +328,17 @@ def main():
             with chat_container:
                 for message in state.conversation_history:
                     with st.chat_message(message["role"]):
-                        st.write(message["content"])
+                        st.markdown(message["content"])
             
             # Current teaching content
             if current_topic and not current_topic.completed:
                 teaching_content = None
                 
-                # Check if we need to generate new content
+                # Generate new lesson content if needed
                 if len(state.conversation_history) == 0 or (
-                    len(state.conversation_history) > 0 and
-                    state.conversation_history[-1]["role"] == "user"
+                    len(state.conversation_history) > 0 and 
+                    state.conversation_history[-1]["role"] == "assistant" and 
+                    "Moving on to the next topic" in state.conversation_history[-1]["content"]
                 ):
                     teaching_content = generate_teaching_message(
                         current_topic,
@@ -345,25 +347,23 @@ def main():
                         st.session_state.model
                     )
                     
+                    lesson_content = f"""## {current_topic.title}
+
+### Understanding the Concepts
+{teaching_content["explanation"]}
+
+### Examples & Applications
+{teaching_content["examples"]}
+
+### Knowledge Check
+{teaching_content["question"]}"""
+                    
                     with st.chat_message("assistant"):
-                        # Display lesson content
-                        st.markdown("## " + current_topic.title)
-                        
-                        # Explanation section
-                        st.markdown("### Understanding the Concepts")
-                        st.markdown(teaching_content["explanation"])
-                        
-                        # Examples section
-                        st.markdown("### Examples & Applications")
-                        st.markdown(teaching_content["examples"])
-                        
-                        # Question section
-                        st.markdown("### Knowledge Check")
-                        st.markdown(teaching_content["question"])
+                        st.markdown(lesson_content)
                     
                     state.conversation_history.append({
                         "role": "assistant",
-                        "content": teaching_content["question"]
+                        "content": lesson_content
                     })
                     
                     # Store key points for evaluation
@@ -372,6 +372,7 @@ def main():
                 # Handle user response
                 user_input = st.chat_input("Your answer...")
                 if user_input:
+                    # Display user's response
                     with st.chat_message("user"):
                         st.markdown(user_input)
                     
@@ -388,25 +389,35 @@ def main():
                         st.session_state.model
                     )
                     
-                    with st.chat_message("assistant"):
-                        if evaluation["feedback"]:
-                            st.markdown("**Feedback on Your Response:**")
-                            st.markdown(evaluation["feedback"])
-                            st.markdown("---")
-                        
-                        st.markdown("**Complete Explanation:**")
-                        st.markdown(evaluation["complete_answer"])
-                        
-                        st.markdown("---")
-                        st.markdown("🎯 *Moving on to the next topic...*")
+                    # Format evaluation response
+                    evaluation_response = f"""**Feedback on Your Response:**
+{evaluation['feedback']}
+
+**Complete Explanation:**
+{evaluation['complete_answer']}
+
+---
+🎯 *Moving on to the next topic...*"""
                     
-                    # Always advance after providing the complete answer
+                    # Display evaluation
+                    with st.chat_message("assistant"):
+                        st.markdown(evaluation_response)
+                    
+                    # Add to conversation history
+                    state.conversation_history.append({
+                        "role": "assistant",
+                        "content": evaluation_response
+                    })
+                    
+                    # Mark topic as completed
                     current_topic.completed = True
+                    
+                    # Advance to next topic
                     if state.advance_topic():
                         st.rerun()
                     else:
                         st.balloons()
-                        st.success("🎉 Congratulations! You've completed all topics!")
+                        st.success("🎉 Congratulations! You've completed the tutorial!")
     
     with col2:
         if st.session_state.tutorial_state.topics:
