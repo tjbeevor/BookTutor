@@ -155,47 +155,74 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     
     phase_prompts = {
         "introduction": """
-            As an engaging tutor, create a brief, friendly introduction to this topic.
-            Make it conversational and spark interest by highlighting why this topic matters.
-            End with an engaging question to check the student's prior knowledge.
+            You are teaching: {topic.title}
             
-            Return as JSON: {
-                "message": "your introduction message",
+            Create an engaging introduction that:
+            1. Clearly states what will be covered
+            2. Explains why this topic matters
+            3. Outlines 2-3 key learning objectives
+            4. Ends with a simple engaging question to gauge interest
+            
+            Make it concise but informative. Be warm and encouraging.
+            
+            Return as JSON: {{
+                "message": "your introduction with clear learning objectives",
                 "question": "your engaging question",
                 "expected_concepts": ["concept1", "concept2"]
-            }
+            }}
         """,
         "explanation": """
-            Explain the core concepts of this topic in a conversational way.
-            Use clear language and break down complex ideas.
-            Include a quick comprehension check question.
+            You are teaching: {topic.title}
             
-            Return as JSON: {
-                "message": "your explanation",
-                "question": "your check-in question",
+            Provide a clear explanation that:
+            1. Presents the core concept with a clear definition
+            2. Breaks down each major component
+            3. Uses analogies or simplified explanations for complex ideas
+            4. Highlights key relationships between ideas
+            5. Summarizes the main points
+            
+            Keep it focused and structured. Use headings and bullet points for clarity.
+            
+            Return as JSON: {{
+                "message": "your structured explanation",
+                "key_points": ["point1", "point2", "point3"],
                 "expected_concepts": ["concept1", "concept2"]
-            }
+            }}
         """,
         "examples": """
-            Provide 2-3 real-world examples that illustrate the concepts.
-            Make them relatable and interesting.
-            Include a question about applying the concepts to a new situation.
+            You are teaching: {topic.title}
             
-            Return as JSON: {
-                "message": "your examples",
-                "question": "your application question",
+            Provide concrete examples that:
+            1. Start with a simple, clear example
+            2. Progress to more complex real-world applications
+            3. Explain why each example illustrates the concept
+            4. Connect examples to previously covered ideas
+            
+            End with a guided example where you walk through the thinking process.
+            
+            Return as JSON: {{
+                "message": "your examples and explanations",
+                "guided_example": "step-by-step walkthrough",
                 "expected_concepts": ["concept1", "concept2"]
-            }
+            }}
         """,
         "practice": """
-            Create a challenging but fair practice problem that tests understanding.
-            Make it specific and provide clear criteria for a good answer.
+            You are teaching: {topic.title}
             
-            Return as JSON: {
-                "message": "your practice problem setup",
+            Create a practice scenario that:
+            1. Starts with a real-world situation
+            2. Asks specific questions that test understanding
+            3. Provides clear criteria for a good answer
+            4. Tests application of multiple concepts
+            
+            Make it challenging but achievable.
+            
+            Return as JSON: {{
+                "message": "your scenario setup",
                 "question": "your specific question",
-                "expected_concepts": ["concept1", "concept2", "concept3"]
-            }
+                "expected_concepts": ["concept1", "concept2", "concept3"],
+                "hints": ["hint1", "hint2"]
+            }}
         """
     }
     
@@ -206,7 +233,7 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     Previous conversation:
     {context}
     
-    {phase_prompts[phase]}
+    {phase_prompts[phase].format(topic=topic)}
     """
     
     try:
@@ -215,7 +242,6 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     except Exception as e:
         st.error(f"Error generating teaching content: {str(e)}")
         raise
-
 def evaluate_response(answer: str, expected_concepts: List[str], topic: Topic, model) -> dict:
     prompt = f"""
     Topic: {topic.title}
@@ -316,6 +342,7 @@ def main():
             state = st.session_state.tutorial_state
             current_topic = state.get_current_topic()
             
+
             if current_topic and not current_topic.completed:
                 # Generate next teaching message if needed
                 if len(state.conversation_history) == 0 or state.conversation_history[-1]["role"] == "user":
@@ -327,8 +354,28 @@ def main():
                     )
                     
                     with st.chat_message("assistant"):
-                        st.write(teaching_content["message"])
-                        st.write(teaching_content["question"])
+                        if state.current_teaching_phase == "introduction":
+                            st.write(teaching_content["message"])
+                            st.write(teaching_content["question"])
+
+                        elif state.current_teaching_phase == "explanation":
+                            st.write("📚 " + teaching_content["message"])
+                            st.write("\n**Key Points:**")
+                            for point in teaching_content["key_points"]:
+                                st.write(f"• {point}")
+                                
+                        elif state.current_teaching_phase == "examples":
+                            st.write("🔍 " + teaching_content["message"])
+                            st.write("\n**Guided Example:**")
+                            st.write(teaching_content["guided_example"])
+
+                        elif state.current_teaching_phase == "practice":
+                            st.write("🏋️ " + teaching_content["message"])
+                            st.write("\n**Question:**")
+                            st.write(teaching_content["question"])
+                            st.write("\n**Hints:**")
+                            for hint in teaching_content["hints"]:
+                                st.write(f"💡 {hint}")
                     
                     state.conversation_history.append({
                         "role": "assistant",
