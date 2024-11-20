@@ -407,5 +407,5 @@ def main():
                     status = "✅" if subtopic.completed else "📍" if (i-1 == state.current_topic_index and j-1 == state.current_subtopic_index) else "⭕️"
                     st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;{status} {i}.{j} {subtopic.title}")
  
-        if __name__ == "__main__":
-            main()
+if __name__ == "__main__":
+    main()
