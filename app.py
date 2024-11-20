@@ -173,45 +173,69 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     prompt = f"""
-    You are teaching: {topic.title}
+    You are an expert teacher presenting: {topic.title}
     Content to teach: {topic.content}
     
-    Create a lesson with these exact sections.
-    Format your response EXACTLY as a single JSON object:
+    Create a comprehensive lesson following this pedagogical structure.
+    Return your response in this exact JSON format:
     {{
-        "explanation": "Write a clear 2-3 paragraph explanation of the concept here",
-        "examples": "Write 2-3 concrete examples showing the concept in action here",
-        "question": "Write one specific assessment question here",
-        "key_points": ["point1", "point2", "point3"]
+        "explanation": "Provide a detailed lesson that:
+            - Starts with a clear introduction that hooks the learner's interest
+            - Breaks down the core concepts step by step
+            - Uses clear language and builds on previous knowledge
+            - Explains the relationships between ideas
+            - Includes relevant background information
+            - Emphasizes key principles and their importance
+            - Concludes with a summary of main points
+            The explanation should be 3-4 well-structured paragraphs.",
+            
+        "examples": "Provide 3-4 detailed, real-world examples that:
+            - Start with a simple, foundational example
+            - Progress to more complex, practical applications
+            - Show how the concepts are used in real situations
+            - Connect back to the main concepts
+            - Demonstrate practical relevance
+            - Include specific scenarios and outcomes
+            Format with clear numbering and explanations.",
+            
+        "question": "Create a thought-provoking question that:
+            - Tests understanding of both concepts and applications
+            - Requires analytical thinking
+            - Asks for specific examples or applications
+            - Connects multiple concepts together
+            Make it specific and focused on the material just covered.",
+            
+        "key_points": [
+            "List 3-4 specific points you expect in a thorough answer",
+            "Include both theoretical understanding and practical application",
+            "Focus on the key concepts and examples discussed"
+        ]
     }}
-    
-    Important:
-    - Return only basic text without special formatting
-    - Keep content focused and clear
-    - Ensure valid JSON formatting
-    - Do not use numbered lists
-    - Use array notation for lists: ["item1", "item2"]
+
+    Important guidelines:
+    - Be thorough and detailed in all sections
+    - Maintain a clear teaching progression
+    - Connect concepts to real-world applications
+    - Use engaging, clear language
+    - Focus on building deep understanding
+    - Ensure examples directly support the concepts
+    - Make the knowledge check meaningful and specific to the lesson
     """
     
     try:
         response = model.generate_content(prompt)
         response_text = response.parts[0].text
-        
-        # Clean and parse JSON
         cleaned_json = clean_json_string(response_text)
         
         try:
             return json.loads(cleaned_json)
         except json.JSONDecodeError as e:
             st.error(f"Failed to parse JSON response: {str(e)}")
-            st.code(cleaned_json)
-            
-            # Fallback response
             return {
-                "explanation": "There was an error generating the content. Proceeding with basic content.\n\n" + topic.content,
-                "examples": "Examples will be provided in the next section.",
-                "question": "What are the key concepts you understood from this topic?",
-                "key_points": ["Understanding of main concepts", "Application of knowledge"]
+                "explanation": "Error generating content. Please refresh the page.",
+                "examples": ["Example content unavailable."],
+                "question": "Basic comprehension question",
+                "key_points": ["Understanding of main concepts"]
             }
             
     except Exception as e:
@@ -349,13 +373,15 @@ def main():
                     
                     lesson_content = f"""## {current_topic.title}
 
-### Understanding the Concepts
+### 📚 Understanding the Concepts
 {teaching_content["explanation"]}
 
-### Examples & Applications
+### 🔍 Practical Examples & Applications
 {teaching_content["examples"]}
 
-### Knowledge Check
+### 💡 Knowledge Check
+Based on what we've just learned, consider this question:
+
 {teaching_content["question"]}"""
                     
                     with st.chat_message("assistant"):
@@ -390,10 +416,10 @@ def main():
                     )
                     
                     # Format evaluation response
-                    evaluation_response = f"""**Feedback on Your Response:**
+                    evaluation_response = f"""### Feedback on Your Response
 {evaluation['feedback']}
 
-**Complete Explanation:**
+### Complete Explanation
 {evaluation['complete_answer']}
 
 ---
