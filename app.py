@@ -148,92 +148,35 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
         raise
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
-    context = "\n".join([
-        f"{'Tutor' if msg['role'] == 'assistant' else 'Student'}: {msg['content']}"
-        for msg in conversation_history[-3:]
-    ])
-    
-    phase_prompts = {
-        "introduction": """
-            You are teaching: {topic.title}
-            
-            Create an engaging introduction that:
-            1. Clearly states what will be covered
-            2. Explains why this topic matters
-            3. Outlines 2-3 key learning objectives
-            4. Ends with a simple engaging question to gauge interest
-            
-            Make it concise but informative. Be warm and encouraging.
-            
-            Return as JSON: {{
-                "message": "your introduction with clear learning objectives",
-                "question": "your engaging question",
-                "expected_concepts": ["concept1", "concept2"]
-            }}
-        """,
-        "explanation": """
-            You are teaching: {topic.title}
-            
-            Provide a clear explanation that:
-            1. Presents the core concept with a clear definition
-            2. Breaks down each major component
-            3. Uses analogies or simplified explanations for complex ideas
-            4. Highlights key relationships between ideas
-            5. Summarizes the main points
-            
-            Keep it focused and structured. Use headings and bullet points for clarity.
-            
-            Return as JSON: {{
-                "message": "your structured explanation",
-                "key_points": ["point1", "point2", "point3"],
-                "expected_concepts": ["concept1", "concept2"]
-            }}
-        """,
-        "examples": """
-            You are teaching: {topic.title}
-            
-            Provide concrete examples that:
-            1. Start with a simple, clear example
-            2. Progress to more complex real-world applications
-            3. Explain why each example illustrates the concept
-            4. Connect examples to previously covered ideas
-            
-            End with a guided example where you walk through the thinking process.
-            
-            Return as JSON: {{
-                "message": "your examples and explanations",
-                "guided_example": "step-by-step walkthrough",
-                "expected_concepts": ["concept1", "concept2"]
-            }}
-        """,
-        "practice": """
-            You are teaching: {topic.title}
-            
-            Create a practice scenario that:
-            1. Starts with a real-world situation
-            2. Asks specific questions that test understanding
-            3. Provides clear criteria for a good answer
-            4. Tests application of multiple concepts
-            
-            Make it challenging but achievable.
-            
-            Return as JSON: {{
-                "message": "your scenario setup",
-                "question": "your specific question",
-                "expected_concepts": ["concept1", "concept2", "concept3"],
-                "hints": ["hint1", "hint2"]
-            }}
-        """
-    }
-    
     prompt = f"""
-    You are an expert tutor teaching: {topic.title}
-    Topic content: {topic.content}
+    You are teaching this topic: {topic.title}
+    Content to cover: {topic.content}
     
-    Previous conversation:
-    {context}
+    Create a comprehensive lesson following this exact structure:
+    1. EXPLANATION (2-3 paragraphs):
+       - Clear introduction of the concept
+       - Detailed breakdown of key components
+       - Clear explanations of relationships and importance
     
-    {phase_prompts[phase].format(topic=topic)}
+    2. EXAMPLES (2-3 concrete examples):
+       - Start with a simple example
+       - Progress to more complex real-world applications
+       - Explain why each example matters
+    
+    3. ASSESSMENT:
+       - One specific scenario-based question that tests understanding
+       - Question should require application of the concepts learned
+       - Include 2-3 key points you expect in a good answer
+    
+    Return response in this JSON format:
+    {{
+        "explanation": "your detailed explanation section",
+        "examples": "your examples section",
+        "question": "your assessment question",
+        "expected_points": ["point1", "point2", "point3"]
+    }}
+    
+    Remember: Present all the content first, then ask the question. Don't break up the flow with intermediate questions.
     """
     
     try:
@@ -242,21 +185,23 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     except Exception as e:
         st.error(f"Error generating teaching content: {str(e)}")
         raise
-def evaluate_response(answer: str, expected_concepts: List[str], topic: Topic, model) -> dict:
+def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
     prompt = f"""
     Topic: {topic.title}
     Student's answer: {answer}
-    Expected concepts: {', '.join(expected_concepts)}
+    Expected key points: {', '.join(expected_points)}
     
-    As a supportive tutor, evaluate the response. Be encouraging but thorough.
-    Provide specific feedback and suggestions for improvement if needed.
+    Evaluate the response thoroughly. Consider:
+    1. Whether key concepts are understood
+    2. If the application of knowledge is correct
+    3. The depth of understanding demonstrated
     
-    Return as JSON: {{
-        "understood": true/false,
-        "feedback": "your encouraging feedback",
-        "missing_concepts": ["concept1", "concept2"],
-        "understanding_score": 0-100,
-        "follow_up_question": "optional follow-up question if needed"
+    Return as JSON:
+    {{
+        "understanding_level": 0-100,
+        "feedback": "specific, encouraging feedback",
+        "mastered": true/false,
+        "missing_points": ["point1", "point2"]
     }}
     """
     
@@ -344,8 +289,13 @@ def main():
             
 
             if current_topic and not current_topic.completed:
-                # Generate next teaching message if needed
-                if len(state.conversation_history) == 0 or state.conversation_history[-1]["role"] == "user":
+                teaching_content = None
+                
+                # Check if we need to generate new content
+                if len(state.conversation_history) == 0 or (
+                    len(state.conversation_history) > 0 or (
+                    state.conversation_history[-1]["role"] == "user"
+                ):
                     teaching_content = generate_teaching_message(
                         current_topic,
                         state.current_teaching_phase,
@@ -354,72 +304,64 @@ def main():
                     )
                     
                     with st.chat_message("assistant"):
-                        if state.current_teaching_phase == "introduction":
-                            st.write(teaching_content["message"])
-                            st.write(teaching_content["question"])
+                        #Display lesson content
+                        st.markdown("## " + current_topic.title)
 
-                        elif state.current_teaching_phase == "explanation":
-                            st.write("📚 " + teaching_content["message"])
-                            st.write("\n**Key Points:**")
-                            for point in teaching_content["key_points"]:
-                                st.write(f"• {point}")
-                                
-                        elif state.current_teaching_phase == "examples":
-                            st.write("🔍 " + teaching_content["message"])
-                            st.write("\n**Guided Example:**")
-                            st.write(teaching_content["guided_example"])
+                        #Explanation section
+                        st.markdown("### Understanding the Concepts")
+                        st.markdown(teaching_content["explanation"])
 
-                        elif state.current_teaching_phase == "practice":
-                            st.write("🏋️ " + teaching_content["message"])
-                            st.write("\n**Question:**")
-                            st.write(teaching_content["question"])
-                            st.write("\n**Hints:**")
-                            for hint in teaching_content["hints"]:
-                                st.write(f"💡 {hint}")
-                    
+                        # Examples section
+                        st.markdown("### Examples & Applications")
+                        st.markdown(teaching_content["examples"])
+
+                        # Question section
+                        st.markdown("### Knowledge Check")
+                        st.markdown(teaching_content["question"]
+
                     state.conversation_history.append({
                         "role": "assistant",
-                        "content": f"{teaching_content['message']}\n\n{teaching_content['question']}"
+                        "content": teaching_content["question"]
                     })
-                    
-                    st.session_state.expected_concepts = teaching_content["expected_concepts"]
+                    # Store expected points for evaluation
+                    st.session_state.expected_points = teaching_content["expected_points"]
+    
+    # Handle user response
+    user_input = st.chat_input("Your answer...")
+    if user_input:
+        with st.chat_message("user"):
+            st.markdown(user_input)
+        
+        state.conversation_history.append({
+            "role": "user",
+            "content": user_input
+        })
+        
+        # Evaluate understanding
+        evaluation = evaluate_response(
+            user_input,
+            st.session_state.expected_points,
+            current_topic,
+            st.session_state.model
+        )
+        
+        with st.chat_message("assistant"):
+            st.markdown(evaluation["feedback"])
             
-            # User input
-            user_input = st.chat_input("Your response...")
-            if user_input:
-                with st.chat_message("user"):
-                    st.write(user_input)
-                
-                state.conversation_history.append({
-                    "role": "user",
-                    "content": user_input
-                })
-                
-                evaluation = evaluate_response(
-                    user_input,
-                    st.session_state.expected_concepts,
-                    current_topic,
-                    st.session_state.model
-                )
-                
-                with st.chat_message("assistant"):
-                    st.write(evaluation["feedback"])
-                    if evaluation["follow_up_question"]:
-                        st.write(evaluation["follow_up_question"])
-                
-                state.conversation_history.append({
-                    "role": "assistant",
-                    "content": f"{evaluation['feedback']}\n\n{evaluation.get('follow_up_question', '')}"
-                })
-                
-                state.understanding_level = evaluation["understanding_score"]
-                
-                if evaluation["understood"]:
-                    if not state.advance_phase():
-                        st.balloons()
-                        st.success("🎉 Congratulations! You've completed the tutorial!")
-                
-                st.rerun()
+            if evaluation["mastered"]:
+                current_topic.completed = True
+                if state.advance_topic():
+                    st.markdown("🎉 Great job! Let's move on to the next topic.")
+                    st.rerun()
+                else:
+                    st.balloons()
+                    st.success("Congratulations! You've completed all topics!")
+            else:
+                st.markdown("\nPlease try again, focusing on these points:")
+                for point in evaluation["missing_points"]:
+                    st.markdown(f"• {point}")
+           
+            
     
     with col2:
         if st.session_state.tutorial_state.topics:
