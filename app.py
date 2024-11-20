@@ -413,18 +413,16 @@ def main():
         # Chat interface (only shown after content is processed)
         if st.session_state.tutorial_state.topics:
             chat_container = st.container()
+            state = st.session_state.tutorial_state
+            current_topic = state.get_current_topic()
             
             # Display conversation history
             with chat_container:
-                for message in st.session_state.tutorial_state.conversation_history:
+                for message in state.conversation_history:
                     with st.chat_message(message["role"]):
                         st.write(message["content"])
             
             # Current teaching content
-            state = st.session_state.tutorial_state
-            current_topic = state.get_current_topic()
-            
-
             if current_topic and not current_topic.completed:
                 teaching_content = None
                 
@@ -441,86 +439,93 @@ def main():
                     )
                     
                     with st.chat_message("assistant"):
-                        st.markdown(evaluation["feedback"])
-    
-                    if not evaluation["mastered"]:
-                        if evaluation["missing_points"]:
-                            st.markdown("\nConsider these points:")
-                            for point in evaluation["missing_points"]:
-                                st.markdown(f"• {point}")
+                        # Display lesson content
+                        st.markdown("## " + current_topic.title)
                         
-
+                        # Explanation section
+                        st.markdown("### Understanding the Concepts")
+                        st.markdown(teaching_content["explanation"])
+                        
+                        # Examples section
+                        st.markdown("### Examples & Applications")
+                        st.markdown(teaching_content["examples"])
+                        
+                        # Question section
+                        st.markdown("### Knowledge Check")
+                        st.markdown(teaching_content["question"])
+                    
                     state.conversation_history.append({
                         "role": "assistant",
                         "content": teaching_content["question"]
                     })
-                    # Store expected points for evaluation
-                    st.session_state.key_points = teaching_content["key_points"]
-    
-    # Handle user response
-    user_input = st.chat_input("Your answer...")
-    if user_input:
-        with st.chat_message("user"):
-            st.markdown(user_input)
+                    
+                    # Store key points for evaluation
+                    st.session_state.expected_points = teaching_content["key_points"]
+                
+                # Handle user response
+                user_input = st.chat_input("Your answer...")
+                if user_input:
+                    with st.chat_message("user"):
+                        st.markdown(user_input)
+                    
+                    state.conversation_history.append({
+                        "role": "user",
+                        "content": user_input
+                    })
+                    
+                    # Evaluate understanding
+                    evaluation = evaluate_response(
+                        user_input,
+                        st.session_state.expected_points,
+                        current_topic,
+                        st.session_state.model
+                    )
+                    
+                    with st.chat_message("assistant"):
+                        st.markdown(evaluation["feedback"])
+                        
+                        if not evaluation["mastered"]:
+                            if evaluation["missing_points"]:
+                                st.markdown("\nConsider these points:")
+                                for point in evaluation["missing_points"]:
+                                    st.markdown(f"• {point}")
+                        else:
+                            current_topic.completed = True
+                            if state.advance_topic():
+                                st.markdown("🎉 Great job! Let's move on to the next topic.")
+                                st.rerun()
+                            else:
+                                st.balloons()
+                                st.success("Congratulations! You've completed all topics!")
         
-        state.conversation_history.append({
-            "role": "user",
-            "content": user_input
-        })
-        
-        # Evaluate understanding
-        evaluation = evaluate_response(
-            user_input,
-            st.session_state.key_points,
-            current_topic,
-            st.session_state.model
-        )
-        
-        with st.chat_message("assistant"):
-            st.markdown(evaluation["feedback"])
-            
-            if evaluation["mastered"]:
-                current_topic.completed = True
-                if state.advance_topic():
-                    st.markdown("🎉 Great job! Let's move on to the next topic.")
-                    st.rerun()
-                else:
-                    st.balloons()
-                    st.success("Congratulations! You've completed all topics!")
-            else:
-                st.markdown("\nPlease try again, focusing on these points:")
-                for point in evaluation["missing_points"]:
-                    st.markdown(f"• {point}")
-           
-            
-    
-    with col2:
-        if st.session_state.tutorial_state.topics:
-            # Progress and topic overview
-            st.subheader("Learning Progress")
-            
-            # Understanding level
-            st.progress(state.understanding_level / 100)
-            st.write(f"Understanding Level: {state.understanding_level}%")
-            
-            # Current topic info
-            if current_topic:
-                st.info(f"Current Topic: {current_topic.title}")
-                st.write(f"Phase: {state.current_teaching_phase.title()}")
-            
-            # Topic tree with status indicators
-            st.subheader("Topic Overview")
-            for i, topic in enumerate(state.topics, 1):
-                status = "✅" if topic.completed else "📍" if topic == current_topic else "⭕️"
-                st.write(f"{status} {i}. {topic.title}")
-                for j, subtopic in enumerate(topic.subtopics, 1):
-                    status = "✅" if subtopic.completed else "📍" if subtopic == current_topic else "⭕️"
-                    st.write(f"   {status} {i}.{j} {subtopic.title}")
-            
-            # Reset button
-            if st.button("Reset Tutorial"):
-                st.session_state.tutorial_state.reset()
-                st.rerun()
+            with col2:
+                if st.session_state.tutorial_state.topics:
+                    # Progress and topic overview
+                    st.subheader("Learning Progress")
+                    
+                    # Understanding level
+                    if 'understanding_level' in locals():
+                        st.progress(evaluation["understanding_level"] / 100)
+                        st.write(f"Understanding Level: {evaluation['understanding_level']}%")
+                    
+                    # Current topic info
+                    if current_topic:
+                        st.info(f"Current Topic: {current_topic.title}")
+                        st.write(f"Phase: {state.current_teaching_phase.title()}")
+                    
+                    # Topic tree with status indicators
+                    st.subheader("Topic Overview")
+                    for i, topic in enumerate(state.topics, 1):
+                        status = "✅" if topic.completed else "📍" if topic == current_topic else "⭕️"
+                        st.write(f"{status} {i}. {topic.title}")
+                        for j, subtopic in enumerate(topic.subtopics, 1):
+                            status = "✅" if subtopic.completed else "📍" if subtopic == current_topic else "⭕️"
+                            st.write(f"   {status} {i}.{j} {subtopic.title}")
+                    
+                    # Reset button
+                    if st.button("Reset Tutorial"):
+                        st.session_state.tutorial_state.reset()
+                        st.rerun()
 
 if __name__ == "__main__":
     main()
