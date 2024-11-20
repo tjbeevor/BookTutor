@@ -296,7 +296,7 @@ def main():
                             content, st.session_state.model
                         )
                         st.success("Tutorial structure created! Let's begin learning.")
-                        st.experimental_rerun()
+                        st.rerun()
                         
                     except Exception as e:
                         st.error(f"Error processing content: {str(e)}")
@@ -372,7 +372,7 @@ def main():
                         st.balloons()
                         st.success("🎉 Congratulations! You've completed the tutorial!")
                 
-                st.experimental_rerun()
+                st.rerun()
     
     with col2:
         if st.session_state.tutorial_state.topics:
@@ -400,7 +400,7 @@ def main():
             # Reset button
             if st.button("Reset Tutorial"):
                 st.session_state.tutorial_state.reset()
-                st.experimental_rerun()
+                st.rerun()
 
 if __name__ == "__main__":
     main()
