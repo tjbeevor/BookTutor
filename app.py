@@ -89,11 +89,34 @@ def process_pdf(pdf_file) -> str:
         raise
 
 def clean_json_string(json_str: str) -> str:
-    if "```json" in json_str:
-        json_str = json_str.replace("```json", "")
-    if "```" in json_str:
-        json_str = json_str.replace("```", "")
-    return json_str.strip()
+    """Clean and format JSON string to ensure valid parsing."""
+    # Remove markdown code block indicators
+    json_str = json_str.replace("```json", "").replace("```", "")
+    
+    # Replace numbered list items with actual strings
+    json_str = json_str.replace("[1.", '["').replace("2.", '","').replace("3.", '","').replace("4.", '","')
+    if json_str.count('[') > json_str.count(']'):
+        json_str = json_str + '"]'
+    
+    # Fix common formatting issues
+    json_str = json_str.replace('\n', ' ')
+    json_str = json_str.replace('\r', ' ')
+    json_str = json_str.replace('\t', ' ')
+    json_str = json_str.replace('**', '')
+    
+    # Fix list formatting
+    json_str = json_str.replace('* ', '')
+    
+    # Remove multiple spaces
+    json_str = ' '.join(json_str.split())
+    
+    # Fix common delimiter issues
+    json_str = json_str.replace('} {', '},{')
+    
+    # Clean up array delimiters
+    json_str = json_str.replace('[ ', '[').replace(' ]', ']')
+    
+    return json_str
 
 def generate_tutorial_structure(content: str, model) -> List[Topic]:
     prompt = f"""
@@ -149,94 +172,45 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     prompt = f"""
-    You are an expert tutor teaching: {topic.title}
-    Content to cover: {topic.content}
+    You are teaching: {topic.title}
+    Content to teach: {topic.content}
     
-    Create a comprehensive, engaging lesson that deeply explains the topic.
-    Include rich examples and real-world applications.
-    End with ONE thought-provoking question to check understanding.
-    
-    Return your response in this exact JSON format:
+    Create a lesson with these exact sections.
+    Format your response EXACTLY as a single JSON object:
     {{
-        "explanation": "Provide a detailed, well-structured explanation (4-5 paragraphs) that:
-            - Starts with a clear introduction of the concept
-            - Breaks down complex ideas into digestible parts
-            - Explains relationships and interconnections
-            - Uses clear, precise language
-            - Builds understanding progressively",
-        
-        "examples": "Provide 2-3 detailed, real-world examples that:
-            - Start with a simple, relatable example
-            - Progress to more complex, nuanced examples
-            - Explain why each example matters
-            - Connect examples to the main concepts
-            - Show practical applications",
-            
-        "question": "ONE thought-provoking question that:
-            - Tests deeper understanding
-            - Requires application of concepts
-            - Encourages critical thinking",
-            
-        "key_points": ["3-4 main points you expect to see in a good answer"]
+        "explanation": "Write a clear 2-3 paragraph explanation of the concept here",
+        "examples": "Write 2-3 concrete examples showing the concept in action here",
+        "question": "Write one specific assessment question here",
+        "key_points": ["point1", "point2", "point3"]
     }}
-
+    
     Important:
-    - Be thorough and detailed in explanations
-    - Use clear, engaging language
-    - Make real-world connections
-    - Focus on depth of understanding
-    - Avoid surface-level or obvious content
+    - Return only basic text without special formatting
+    - Keep content focused and clear
+    - Ensure valid JSON formatting
+    - Do not use numbered lists
+    - Use array notation for lists: ["item1", "item2"]
     """
     
     try:
         response = model.generate_content(prompt)
         response_text = response.parts[0].text
         
-        # Clean up the response
-        response_text = clean_json_string(response_text)
-        
-        # Extract the first complete JSON object
-        def extract_first_json(text):
-            # Find the first opening brace
-            start = text.find('{')
-            if start == -1:
-                return None
-            
-            # Track nested braces
-            count = 0
-            for i in range(start, len(text)):
-                if text[i] == '{':
-                    count += 1
-                elif text[i] == '}':
-                    count -= 1
-                    if count == 0:
-                        # Found complete JSON object
-                        return text[start:i+1]
-            return None
-        
-        # Get the first complete JSON object
-        json_str = extract_first_json(response_text)
-        if not json_str:
-            raise ValueError("No valid JSON object found in response")
-            
-        # Clean up the extracted JSON
-        json_str = json_str.replace('\n', ' ')
-        json_str = json_str.replace('\r', ' ')
-        json_str = json_str.replace('\t', ' ')
-        json_str = json_str.replace('**', '')  # Remove markdown formatting
+        # Clean and parse JSON
+        cleaned_json = clean_json_string(response_text)
         
         try:
-            return json.loads(json_str)
+            return json.loads(cleaned_json)
         except json.JSONDecodeError as e:
             st.error(f"Failed to parse JSON response: {str(e)}")
-            st.code(json_str)  # Display the problematic response
+            st.code(cleaned_json)
             
             # Fallback response
             return {
-                "explanation": "There was an error generating the lesson content. Please try again.",
-                "examples": "Examples could not be generated.",
-                "question": "Please refresh the page to try again.",
-                "key_points": ["Understanding of core concepts", "Application of knowledge"]
+                "explanation": "There was an error generating the content. Proceeding with basic content.\n\n" + topic.content,
+                "examples": "Examples will be provided in the next section.",
+                "question": "What are the key concepts you understood from this topic?",
+                "key_points": ["Understanding of main concepts", "Application of knowledge"]
             }
             
     except Exception as e:
@@ -246,89 +220,39 @@ def evaluate_response(answer: str, expected_points: List[str], topic: Topic, mod
     prompt = f"""
     Topic: {topic.title}
     Student's answer: {answer}
-    Key points expected: {', '.join(expected_points)}
+    Expected points: {', '.join(expected_points)}
     
-    Provide a helpful response in this exact format:
+    Return your evaluation as a single JSON object:
     {{
-        "feedback": "Brief feedback on what was good/missing in the answer",
-        "complete_answer": "Provide a thorough explanation of the correct answer that:
-            - Covers all key points
-            - Explains concepts clearly
-            - Makes connections between ideas
-            - Uses specific examples where helpful",
+        "feedback": "Brief feedback on the answer",
+        "complete_answer": "Thorough explanation of the correct answer",
         "mastered": false
     }}
     
-    Make the complete_answer thorough and educational - this is a teaching opportunity.
-    Focus on explaining the correct answer rather than critiquing the student's response.
+    Keep your response simple and focused. Do not use special formatting or numbered lists.
     """
     
     try:
         response = model.generate_content(prompt)
         response_text = response.parts[0].text
-        
-        # Clean up the response
-        response_text = clean_json_string(response_text)
-        
-        # Extract the first complete JSON object
-        def extract_first_json(text):
-            start = text.find('{')
-            if start == -1:
-                return None
-            
-            count = 0
-            for i in range(start, len(text)):
-                if text[i] == '{':
-                    count += 1
-                elif text[i] == '}':
-                    count -= 1
-                    if count == 0:
-                        return text[start:i+1]
-            return None
-        
-        # Get the first complete JSON object
-        json_str = extract_first_json(response_text)
-        if not json_str:
-            raise ValueError("No valid JSON object found in response")
-            
-        # Clean up the extracted JSON
-        json_str = json_str.replace('\n', ' ')
-        json_str = json_str.replace('\r', ' ')
-        json_str = json_str.replace('\t', ' ')
-        json_str = json_str.replace('**', '')  # Remove markdown formatting
+        cleaned_json = clean_json_string(response_text)
         
         try:
-            evaluation = json.loads(json_str)
-            
-            # Validate the response format
-            required_keys = ["feedback", "complete_answer", "mastered"]
-            if not all(key in evaluation for key in required_keys):
-                raise ValueError("Response missing required keys")
-                
-            # Ensure mastered is boolean
-            if isinstance(evaluation["mastered"], str):
-                evaluation["mastered"] = evaluation["mastered"].lower() == "true"
-                
+            evaluation = json.loads(cleaned_json)
             return evaluation
-            
         except json.JSONDecodeError as e:
-            st.error(f"Failed to parse evaluation response: {str(e)}")
-            st.code(json_str)
-            
-            # Fallback response
+            st.error(f"Failed to parse evaluation JSON: {str(e)}")
             return {
-                "feedback": "There was an error evaluating your response. Moving to the next topic.",
-                "complete_answer": "Let me provide the complete explanation before we move on:\n\n" + topic.content,
+                "feedback": "Thank you for your response.",
+                "complete_answer": f"Here's what you should understand about this topic:\n\n{topic.content}",
                 "mastered": False
             }
             
     except Exception as e:
-        st.error(f"Error evaluating response: {str(e)}")
-        
-        # Fallback response
+        st.error(f"Error in evaluation: {str(e)}")
         return {
-            "feedback": "There was an error processing your response. Let's review the correct answer and move forward.",
-            "complete_answer": f"Here's what you should understand about this topic:\n\n{topic.content}",
+            "feedback": "Thank you for your response.",
+            "complete_answer": f"Let's review the key points:\n\n{topic.content}",
             "mastered": False
         }
 
