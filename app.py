@@ -298,58 +298,9 @@ def evaluate_response(answer: str, expected_points: List[str], topic: Topic, mod
 def main():
     st.set_page_config(page_title="Interactive AI Tutor", layout="wide")
     
-    # Custom styling
-    st.markdown("""
-        <style>
-        .main {
-            padding: 1.5rem;
-        }
-        .stMarkdown h2 {
-            color: #1E88E5;
-            padding: 1rem 0 0.5rem 0;
-            border-bottom: 1px solid #e0e0e0;
-        }
-        .stMarkdown h3 {
-            color: #0D47A1;
-            padding: 1rem 0 0.5rem 0;
-        }
-        .stMarkdown p {
-            line-height: 1.6;
-            margin: 0.8rem 0;
-        }
-        .stMarkdown ul {
-            margin: 0.8rem 0;
-            padding-left: 1.5rem;
-        }
-        pre {
-            background-color: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 4px;
-            padding: 1rem;
-            margin: 1rem 0;
-        }
-        code {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 0.9rem;
-            color: #1a1a1a;
-        }
-        .python-code {
-            background-color: #f8f9fa;
-            border-left: 3px solid #1E88E5;
-        }
-        .knowledge-check {
-            background-color: #f8f9fa;
-            padding: 1rem;
-            border-radius: 4px;
-            margin: 1rem 0;
-        }
-        .feedback {
-            padding: 1rem;
-            border-radius: 4px;
-            margin: 1rem 0;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    # Initialize session state
+    if 'tutorial_state' not in st.session_state:
+        st.session_state.tutorial_state = TutorialState()
     
     st.title("Interactive AI Tutor")
     
@@ -377,13 +328,8 @@ def main():
         if 'model' not in st.session_state:
             st.session_state.model = init_gemini(api_key)
         
-        # Initialize tutorial state
-        if 'tutorial_state' not in st.session_state:
-            st.session_state.tutorial_state = TutorialState()
-        
         # File upload section
         if not st.session_state.tutorial_state.topics:
-            st.markdown("<div class='main'>", unsafe_allow_html=True)
             st.subheader("Upload Learning Material")
             pdf_file = st.file_uploader("Upload Educational PDF", type="pdf")
             
@@ -409,11 +355,9 @@ def main():
                     except Exception as e:
                         st.error(f"Error processing content: {str(e)}")
                         st.stop()
-            st.markdown("</div>", unsafe_allow_html=True)
         
-        # Chat interface
+        # Chat interface (only shown after content is processed)
         if st.session_state.tutorial_state.topics:
-            st.markdown("<div class='main'>", unsafe_allow_html=True)
             chat_container = st.container()
             state = st.session_state.tutorial_state
             current_topic = state.get_current_topic()
@@ -446,33 +390,27 @@ def main():
 ### 📚 Understanding the Concepts
 {teaching_content["explanation"]}
 
----
-
-### 🔍 Real-World Examples & Applications
-<div class="python-code">
+### 🔍 Practical Examples
 {teaching_content["examples"]}
-</div>
 
----
-
-<div class="knowledge-check">
-### 💡 Knowledge Check
-{teaching_content["question"]}
-</div>"""
+### 💡 Understanding Check
+{teaching_content["question"]}"""
                     
                     with st.chat_message("assistant"):
-                        st.markdown(lesson_content, unsafe_allow_html=True)
+                        st.markdown(lesson_content)
                     
                     state.conversation_history.append({
                         "role": "assistant",
                         "content": lesson_content
                     })
                     
+                    # Store key points for evaluation
                     st.session_state.expected_points = teaching_content["key_points"]
                 
                 # Handle user response
                 user_input = st.chat_input("Your answer...")
                 if user_input:
+                    # Display user's response
                     with st.chat_message("user"):
                         st.markdown(user_input)
                     
@@ -489,43 +427,47 @@ def main():
                         st.session_state.model
                     )
                     
-                    evaluation_response = f"""<div class="feedback">
-### 🎯 Feedback
+                    # Format evaluation response
+                    evaluation_response = f"""### Feedback on Your Response
 {evaluation['feedback']}
 
-### ✨ Complete Explanation
+### Complete Explanation
 {evaluation['complete_answer']}
 
 ---
-### 📝 Next Steps
-Moving on to the next topic in our learning journey...
-</div>"""
+🎯 *Moving on to the next topic...*"""
                     
+                    # Display evaluation
                     with st.chat_message("assistant"):
-                        st.markdown(evaluation_response, unsafe_allow_html=True)
+                        st.markdown(evaluation_response)
                     
+                    # Add to conversation history
                     state.conversation_history.append({
                         "role": "assistant",
                         "content": evaluation_response
                     })
                     
+                    # Mark topic as completed
                     current_topic.completed = True
+                    
+                    # Advance to next topic
                     if state.advance_topic():
                         st.rerun()
                     else:
                         st.balloons()
                         st.success("🎉 Congratulations! You've completed the tutorial!")
-            st.markdown("</div>", unsafe_allow_html=True)
     
     with col2:
         if st.session_state.tutorial_state.topics:
-            st.markdown("<div class='sidebar'>", unsafe_allow_html=True)
+            # Progress and topic overview
             st.subheader("Learning Progress")
             
+            # Current topic info
             if current_topic:
                 st.info(f"Current Topic: {current_topic.title}")
                 st.write(f"Phase: {state.current_teaching_phase.title()}")
             
+            # Topic tree with status indicators
             st.subheader("Topic Overview")
             for i, topic in enumerate(state.topics, 1):
                 status = "✅" if topic.completed else "📍" if topic == current_topic else "⭕️"
@@ -534,10 +476,10 @@ Moving on to the next topic in our learning journey...
                     status = "✅" if subtopic.completed else "📍" if subtopic == current_topic else "⭕️"
                     st.write(f"   {status} {i}.{j} {subtopic.title}")
             
+            # Reset button
             if st.button("Reset Tutorial"):
                 st.session_state.tutorial_state.reset()
                 st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
