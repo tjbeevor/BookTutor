@@ -194,7 +194,7 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
         st.code(response_text)
         raise
 
-def generate_teaching_content(topic: Topic, conversation_history: List[Dict], model) -> str:
+def generate_teaching_content(topic: Topic, conversation_history: List[Dict], model) -> dict:
     context = "\n".join([
         f"{'AI' if msg['role'] == 'assistant' else 'Student'}: {msg['content']}"
         for msg in conversation_history[-3:]
@@ -208,55 +208,104 @@ def generate_teaching_content(topic: Topic, conversation_history: List[Dict], mo
     
     Content to teach: {topic.content}
     
-    Create an engaging lesson that includes:
-    1. Brief introduction to catch interest
-    2. Clear explanation of main concepts
-    3. Real-world examples or analogies
-    4. One clear question to test understanding
+    Create a comprehensive, engaging lesson that includes:
+    1. Brief introduction to spark interest
+    2. Clear explanation of core concepts with definitions
+    3. Multiple real-world examples and analogies
+    4. In-depth exploration of key points
+    5. Three carefully crafted questions of increasing difficulty to test understanding:
+       - Basic comprehension
+       - Application of concepts
+       - Critical thinking/analysis
     
-    Keep the tone conversational and encouraging.
-    End with exactly one clear question for the student.
+    Return the response in this exact JSON format:
+    {{
+        "introduction": "engaging opening paragraph",
+        "main_content": "detailed lesson content with examples",
+        "key_points": ["point 1", "point 2", "point 3"],
+        "questions": [
+            {{
+                "level": "basic",
+                "question": "question text",
+                "expected_concepts": ["concept1", "concept2"]
+            }},
+            {{
+                "level": "intermediate",
+                "question": "question text",
+                "expected_concepts": ["concept1", "concept2"]
+            }},
+            {{
+                "level": "advanced",
+                "question": "question text",
+                "expected_concepts": ["concept1", "concept2"]
+            }}
+        ]
+    }}
     """
     
     try:
         response = model.generate_content(prompt)
-        return response.text.strip()
+        return json.loads(clean_json_string(response.text))
     except Exception as e:
         st.error(f"Error generating teaching content: {str(e)}")
         raise
 
-def evaluate_answer(answer: str, topic: Topic, conversation_history: List[Dict], model) -> tuple[bool, str]:
-    context = "\n".join([
-        f"{'AI' if msg['role'] == 'assistant' else 'Student'}: {msg['content']}"
-        for msg in conversation_history[-3:]
-    ])
+def display_lesson(teaching_content: dict, state: TutorialState):
+    st.markdown("## " + state.get_current_topic().title)
     
+    # Introduction
+    st.markdown("### Introduction")
+    st.markdown(teaching_content['introduction'])
+    
+    # Main Content
+    st.markdown("### Main Content")
+    st.markdown(teaching_content['main_content'])
+    
+    # Key Points
+    st.markdown("### Key Points")
+    for point in teaching_content['key_points']:
+        st.markdown(f"• {point}")
+    
+    # Questions
+    if 'current_question_index' not in st.session_state:
+        st.session_state.current_question_index = 0
+    
+    current_question = teaching_content['questions'][st.session_state.current_question_index]
+    
+    st.markdown("### Practice Question")
+    st.markdown(f"**Level: {current_question['level'].title()}**")
+    st.markdown(current_question['question'])
+    
+    return current_question
+    
+def evaluate_answer(answer: str, question_data: dict, topic: Topic, model) -> tuple[bool, str, List[str]]:
     prompt = f"""
-    Topic being taught: {topic.title}
-    Content: {topic.content}
-    
-    Previous conversation context:
-    {context}
+    Topic: {topic.title}
+    Question Level: {question_data['level']}
+    Question: {question_data['question']}
+    Expected Concepts: {', '.join(question_data['expected_concepts'])}
     
     Student's answer: {answer}
     
     Evaluate the student's understanding. Be encouraging but thorough.
-    Reply with EXACTLY one of these formats:
-    UNDERSTOOD: [Explanation of what they got right and any minor points to reinforce]
-    or
-    NOT_UNDERSTOOD: [Supportive explanation of misconceptions and a helpful hint]
+    Return response in this exact JSON format:
+    {{
+        "understood": true/false,
+        "feedback": "detailed feedback explanation",
+        "missing_concepts": ["concept1", "concept2"],
+        "suggestions": ["suggestion1", "suggestion2"]
+    }}
     """
     
     try:
         response = model.generate_content(prompt)
-        response_text = response.text.strip()
+        evaluation = json.loads(clean_json_string(response.text))
         
-        if response_text.startswith("UNDERSTOOD:"):
-            return True, response_text[11:].strip()
-        elif response_text.startswith("NOT_UNDERSTOOD:"):
-            return False, response_text[14:].strip()
-        else:
-            return False, "Let's try to understand this topic better."
+        return (
+            evaluation['understood'],
+            evaluation['feedback'],
+            evaluation['missing_concepts']
+        )
     except Exception as e:
         st.error(f"Error evaluating answer: {str(e)}")
         raise
@@ -329,62 +378,57 @@ def main():
             current_topic = state.get_current_topic()
             
             if current_topic:
-                # Progress tracking
-                completed, total = state.get_progress()
-                progress = (completed / total) * 100 if total > 0 else 0
-                
-                st.progress(progress)
-                st.write(f"Progress: {progress:.1f}% ({completed}/{total} topics)")
-                
-                # Topic navigation
-                st.subheader(f"Current Topic: {current_topic.title}")
-                
-                if not current_topic.completed:
-                    # Generate and display teaching content
-                    with st.spinner("Generating lesson content..."):
-                        teaching_content = generate_teaching_content(
-                            current_topic,
-                            state.conversation_history,
-                            st.session_state.model
-                        )
-                    st.markdown(teaching_content)
+        if not current_topic.completed:
+            # Generate and display teaching content
+            with st.spinner("Generating lesson content..."):
+                teaching_content = generate_teaching_content(
+                    current_topic,
+                    state.conversation_history,
+                    st.session_state.model
+                )
+            
+            current_question = display_lesson(teaching_content, state)
+            
+            # Get and evaluate student's answer
+            student_answer = st.text_area("Your Answer:", key=f"answer_{len(state.conversation_history)}")
+            if st.button("Submit", key=f"submit_{len(state.conversation_history)}"):
+                with st.spinner("Evaluating your answer..."):
+                    understood, feedback, missing_concepts = evaluate_answer(
+                        student_answer,
+                        current_question,
+                        current_topic,
+                        st.session_state.model
+                    )
+                    
                     state.conversation_history.append({
-                        "role": "assistant",
-                        "content": teaching_content
+                        "role": "user",
+                        "content": student_answer
                     })
                     
-                    # Get and evaluate student's answer
-                    student_answer = st.text_area("Your Answer:", key=f"answer_{len(state.conversation_history)}")
-                    if st.button("Submit", key=f"submit_{len(state.conversation_history)}"):
-                        with st.spinner("Evaluating your answer..."):
-                            state.conversation_history.append({
-                                "role": "user",
-                                "content": student_answer
-                            })
-                            
-                            understood, explanation = evaluate_answer(
-                                student_answer,
-                                current_topic,
-                                state.conversation_history,
-                                st.session_state.model
-                            )
-                            
-                            if understood:
-                                st.success(explanation)
-                                current_topic.completed = True
-                                if not state.advance():
-                                    st.balloons()
-                                    st.success("🎉 Congratulations! You've completed the tutorial!")
-                                st.experimental_rerun()
-                            else:
-                                st.warning(explanation)
-                                state.questions_asked += 1
-                                if state.questions_asked >= state.max_questions_per_topic:
-                                    st.info("Let's move on to ensure we cover all topics.")
-                                    current_topic.completed = True
-                                    if not state.advance():
-                                        st.success("Tutorial completed!")
-                                    st.experimental_rerun()
+                    if understood:
+                        st.success(feedback)
+                        if st.session_state.current_question_index < len(teaching_content['questions']) - 1:
+                            st.session_state.current_question_index += 1
+                            st.experimental_rerun()
+                        else:
+                            current_topic.completed = True
+                            st.session_state.current_question_index = 0
+                            if not state.advance():
+                                st.balloons()
+                                st.success("🎉 Congratulations! You've completed the tutorial!")
+                            st.experimental_rerun()
+                    else:
+                        st.warning(feedback)
+                        if missing_concepts:
+                            st.info("Consider reviewing these concepts: " + ", ".join(missing_concepts))
+                        
+                        state.questions_asked += 1
+                        if state.questions_asked >= state.max_questions_per_topic:
+                            st.info("Let's move on to ensure we cover all topics.")
+                            current_topic.completed = True
+                            if not state.advance():
+                                st.success("Tutorial completed!")
+                            st.experimental_rerun()
     
     with col2:
         # Topic Tree and Controls
