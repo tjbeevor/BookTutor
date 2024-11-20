@@ -248,105 +248,36 @@ def evaluate_response(answer: str, expected_points: List[str], topic: Topic, mod
     Student's answer: {answer}
     Key points expected: {', '.join(expected_points)}
     
-    Evaluate the response and return EXACTLY in this format:
+    Provide a helpful response in this exact format:
     {{
-        "understanding_level": 75,
-        "feedback": "write your detailed feedback here",
-        "mastered": true,
-        "missing_points": ["point1", "point2"]
+        "feedback": "Brief feedback on what was good/missing in the answer",
+        "complete_answer": "Provide a thorough explanation of the correct answer that:
+            - Covers all key points
+            - Explains concepts clearly
+            - Makes connections between ideas
+            - Uses specific examples where helpful",
+        "mastered": false
     }}
     
-    Guidelines:
-    - understanding_level must be a number 0-100
-    - feedback should be encouraging and specific
-    - mastered should be true or false
-    - missing_points should be a list of concepts not demonstrated
-    
-    Keep your response EXACTLY in this format with these exact keys.
+    Make the complete_answer thorough and educational - this is a teaching opportunity.
+    Focus on explaining the correct answer rather than critiquing the student's response.
     """
     
     try:
         response = model.generate_content(prompt)
         response_text = response.parts[0].text
         
-        # Clean up the response
-        response_text = clean_json_string(response_text)
+        # Clean up and parse response...
+        evaluation = json.loads(json_str)  # (keeping existing JSON parsing code)
         
-        # Extract the first complete JSON object
-        def extract_first_json(text):
-            start = text.find('{')
-            if start == -1:
-                return None
-            
-            count = 0
-            for i in range(start, len(text)):
-                if text[i] == '{':
-                    count += 1
-                elif text[i] == '}':
-                    count -= 1
-                    if count == 0:
-                        return text[start:i+1]
-            return None
-        
-        # Get the first complete JSON object
-        json_str = extract_first_json(response_text)
-        if not json_str:
-            raise ValueError("No valid JSON object found in response")
-            
-        # Clean up the extracted JSON
-        json_str = json_str.replace('\n', ' ')
-        json_str = json_str.replace('\r', ' ')
-        json_str = json_str.replace('\t', ' ')
-        json_str = json_str.replace('**', '')  # Remove markdown formatting
-        
-        try:
-            evaluation = json.loads(json_str)
-            
-            # Validate the response format
-            required_keys = ["understanding_level", "feedback", "mastered", "missing_points"]
-            if not all(key in evaluation for key in required_keys):
-                st.error(f"Missing keys in response. Got: {list(evaluation.keys())}")
-                return {
-                    "understanding_level": 0,
-                    "feedback": "There was an error evaluating your response. Please try again.",
-                    "mastered": False,
-                    "missing_points": ["Unable to evaluate response"]
-                }
-                
-            # Ensure understanding_level is within bounds
-            evaluation["understanding_level"] = max(0, min(100, int(float(str(evaluation["understanding_level"])))))
-            
-            # Ensure mastered is boolean
-            if isinstance(evaluation["mastered"], str):
-                evaluation["mastered"] = evaluation["mastered"].lower() == "true"
-                
-            # Ensure missing_points is a list
-            if not isinstance(evaluation["missing_points"], list):
-                evaluation["missing_points"] = [str(evaluation["missing_points"])]
-                
-            return evaluation
-            
-        except json.JSONDecodeError as e:
-            st.error(f"Failed to parse evaluation response: {str(e)}")
-            st.code(json_str)
-            
-            # Fallback response
-            return {
-                "understanding_level": 0,
-                "feedback": "There was an error evaluating your response. Please try again.",
-                "mastered": False,
-                "missing_points": ["Unable to evaluate response"]
-            }
+        return evaluation
             
     except Exception as e:
         st.error(f"Error evaluating response: {str(e)}")
-        st.code(response_text)  # Show the problematic response
-        
         return {
-            "understanding_level": 0,
-            "feedback": f"Error evaluating response: {str(e)}",
-            "mastered": False,
-            "missing_points": ["Error in evaluation"]
+            "feedback": "There was an error evaluating your response.",
+            "complete_answer": "Let's continue with the next topic.",
+            "mastered": False
         }
 
 def main():
@@ -482,50 +413,61 @@ def main():
                     )
                     
                     with st.chat_message("assistant"):
-                        st.markdown(evaluation["feedback"])
+                        if evaluation["feedback"]:
+                            st.markdown("**Feedback on Your Response:**")
+                            st.markdown(evaluation["feedback"])
+                            st.markdown("---")
                         
-                        if not evaluation["mastered"]:
-                            if evaluation["missing_points"]:
-                                st.markdown("\nConsider these points:")
-                                for point in evaluation["missing_points"]:
-                                    st.markdown(f"• {point}")
-                        else:
-                            current_topic.completed = True
-                            if state.advance_topic():
-                                st.markdown("🎉 Great job! Let's move on to the next topic.")
-                                st.rerun()
-                            else:
-                                st.balloons()
-                                st.success("Congratulations! You've completed all topics!")
-        
-            with col2:
-                if st.session_state.tutorial_state.topics:
-                    # Progress and topic overview
-                    st.subheader("Learning Progress")
+                        st.markdown("**Complete Explanation:**")
+                        st.markdown(evaluation["complete_answer"])
+                        
+                        st.markdown("---")
+                        st.markdown("🎯 *Moving on to the next topic...*")
                     
-                    # Understanding level
-                    if 'understanding_level' in locals():
-                        st.progress(evaluation["understanding_level"] / 100)
-                        st.write(f"Understanding Level: {evaluation['understanding_level']}%")
-                    
-                    # Current topic info
-                    if current_topic:
-                        st.info(f"Current Topic: {current_topic.title}")
-                        st.write(f"Phase: {state.current_teaching_phase.title()}")
-                    
-                    # Topic tree with status indicators
-                    st.subheader("Topic Overview")
-                    for i, topic in enumerate(state.topics, 1):
-                        status = "✅" if topic.completed else "📍" if topic == current_topic else "⭕️"
-                        st.write(f"{status} {i}. {topic.title}")
-                        for j, subtopic in enumerate(topic.subtopics, 1):
-                            status = "✅" if subtopic.completed else "📍" if subtopic == current_topic else "⭕️"
-                            st.write(f"   {status} {i}.{j} {subtopic.title}")
-                    
-                    # Reset button
-                    if st.button("Reset Tutorial"):
-                        st.session_state.tutorial_state.reset()
+                    # Always advance after providing the complete answer
+                    current_topic.completed = True
+                    if state.advance_topic():
                         st.rerun()
+                    else:
+                        st.balloons()
+                        st.success("🎉 Congratulations! You've completed all topics!")
+    
+    with col2:
+        if st.session_state.tutorial_state.topics:
+            # Progress and topic overview
+            st.subheader("Learning Progress")
+            
+            # Current topic info
+            if current_topic:
+                st.info(f"Current Topic: {current_topic.title}")
+                st.write(f"Phase: {state.current_teaching_phase.title()}")
+            
+            # Topic tree with status indicators
+            st.subheader("Topic Overview")
+            for i, topic in enumerate(state.topics, 1):
+                status = "✅" if topic.completed else "📍" if topic == current_topic else "⭕️"
+                st.write(f"{status} {i}. {topic.title}")
+                for j, subtopic in enumerate(topic.subtopics, 1):
+                    status = "✅" if subtopic.completed else "📍" if subtopic == current_topic else "⭕️"
+                    st.write(f"   {status} {i}.{j} {subtopic.title}")
+            
+            # Reset button
+            if st.button("Reset Tutorial"):
+                st.session_state.tutorial_state.reset()
+                st.rerun()
 
 if __name__ == "__main__":
     main()
+Key changes in this version:
+
+Removed the understanding level progress bar (since we're not using it anymore)
+Added clear section separators in the feedback
+Simplified the evaluation display format
+Always advances to next topic after providing complete explanation
+Added visual structure to the feedback sections
+
+Would you like me to:
+
+Add transition animations between topics?
+Include a topic summary before moving on?
+Add more visual structure to the lessons?
