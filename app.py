@@ -242,25 +242,27 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     except Exception as e:
         st.error(f"Error generating teaching content: {str(e)}")
         raise
-def evaluate_response(answer: str, key_points: List[str], topic: Topic, model) -> dict:
+def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
     prompt = f"""
     Topic: {topic.title}
     Student's answer: {answer}
-    Key points expected: {', '.join(key_points)}
+    Key points expected: {', '.join(expected_points)}
     
-    Provide constructive, encouraging feedback that:
-    1. Acknowledges what the student understood correctly
-    2. Identifies any gaps in understanding
-    3. Offers specific suggestions for improvement
-    4. Maintains a supportive, encouraging tone
-    
-    Return your evaluation in this exact JSON format:
+    Evaluate the response and return EXACTLY in this format:
     {{
-        "understanding_level": "number 0-100 indicating comprehension",
-        "feedback": "Detailed, constructive feedback that helps the student understand their strengths and areas for improvement",
-        "mastered": true/false,
-        "suggestion": "One specific suggestion for deeper understanding (only if needed)"
+        "understanding_level": 75,
+        "feedback": "write your detailed feedback here",
+        "mastered": true,
+        "missing_points": ["point1", "point2"]
     }}
+    
+    Guidelines:
+    - understanding_level must be a number 0-100
+    - feedback should be encouraging and specific
+    - mastered should be true or false
+    - missing_points should be a list of concepts not demonstrated
+    
+    Keep your response EXACTLY in this format with these exact keys.
     """
     
     try:
@@ -303,10 +305,16 @@ def evaluate_response(answer: str, key_points: List[str], topic: Topic, model) -
             # Validate the response format
             required_keys = ["understanding_level", "feedback", "mastered", "missing_points"]
             if not all(key in evaluation for key in required_keys):
-                raise ValueError("Response missing required keys")
+                st.error(f"Missing keys in response. Got: {list(evaluation.keys())}")
+                return {
+                    "understanding_level": 0,
+                    "feedback": "There was an error evaluating your response. Please try again.",
+                    "mastered": False,
+                    "missing_points": ["Unable to evaluate response"]
+                }
                 
             # Ensure understanding_level is within bounds
-            evaluation["understanding_level"] = max(0, min(100, int(evaluation["understanding_level"])))
+            evaluation["understanding_level"] = max(0, min(100, int(float(str(evaluation["understanding_level"])))))
             
             # Ensure mastered is boolean
             if isinstance(evaluation["mastered"], str):
@@ -314,13 +322,13 @@ def evaluate_response(answer: str, key_points: List[str], topic: Topic, model) -
                 
             # Ensure missing_points is a list
             if not isinstance(evaluation["missing_points"], list):
-                evaluation["missing_points"] = []
+                evaluation["missing_points"] = [str(evaluation["missing_points"])]
                 
             return evaluation
             
         except json.JSONDecodeError as e:
             st.error(f"Failed to parse evaluation response: {str(e)}")
-            st.code(json_str)  # Display the problematic response
+            st.code(json_str)
             
             # Fallback response
             return {
@@ -332,7 +340,14 @@ def evaluate_response(answer: str, key_points: List[str], topic: Topic, model) -
             
     except Exception as e:
         st.error(f"Error evaluating response: {str(e)}")
-        raise
+        st.code(response_text)  # Show the problematic response
+        
+        return {
+            "understanding_level": 0,
+            "feedback": f"Error evaluating response: {str(e)}",
+            "mastered": False,
+            "missing_points": ["Error in evaluation"]
+        }
 
 def main():
     st.set_page_config(page_title="Interactive AI Tutor", layout="wide")
@@ -426,20 +441,14 @@ def main():
                     )
                     
                     with st.chat_message("assistant"):
-                        #Display lesson content
-                        st.markdown("## " + current_topic.title)
-
-                        #Explanation section
-                        st.markdown("### Understanding the Concepts")
-                        st.markdown(teaching_content["explanation"])
-
-                        # Examples section
-                        st.markdown("### Examples & Applications")
-                        st.markdown(teaching_content["examples"])
-
-                        # Question section
-                        st.markdown("### Knowledge Check")
-                        st.markdown(teaching_content["question"])
+                        st.markdown(evaluation["feedback"])
+    
+                    if not evaluation["mastered"]:
+                        if evaluation["missing_points"]:
+                            st.markdown("\nConsider these points:")
+                            for point in evaluation["missing_points"]:
+                                st.markdown(f"• {point}")
+                        
 
                     state.conversation_history.append({
                         "role": "assistant",
