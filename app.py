@@ -149,39 +149,54 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     prompt = f"""
-    You are teaching this topic: {topic.title}
-    Content to cover: {topic.content}
+    You are teaching: {topic.title}
+    Content to teach: {topic.content}
     
-    Create a comprehensive lesson following this exact structure:
-    1. EXPLANATION (2-3 paragraphs):
-       - Clear introduction of the concept
-       - Detailed breakdown of key components
-       - Clear explanations of relationships and importance
-    
-    2. EXAMPLES (2-3 concrete examples):
-       - Start with a simple example
-       - Progress to more complex real-world applications
-       - Explain why each example matters
-    
-    3. ASSESSMENT:
-       - One specific scenario-based question that tests understanding
-       - Question should require application of the concepts learned
-       - Include 2-3 key points you expect in a good answer
-    
-    Return response in this JSON format:
+    Create a lesson with these exact sections.
+    Format your response EXACTLY as shown, with no deviations:
     {{
-        "explanation": "your detailed explanation section",
-        "examples": "your examples section",
-        "question": "your assessment question",
+        "explanation": "Write a clear 2-3 paragraph explanation of the concept here",
+        "examples": "Write 2-3 concrete examples showing the concept in action here",
+        "question": "Write one specific assessment question here",
         "expected_points": ["point1", "point2", "point3"]
     }}
-    
-    Remember: Present all the content first, then ask the question. Don't break up the flow with intermediate questions.
+
+    Important:
+    - Use only basic text - no special characters or formatting
+    - Keep paragraphs simple and well-structured
+    - Make examples clear and relatable
+    - Make the question specific and focused on application
     """
     
     try:
         response = model.generate_content(prompt)
-        return json.loads(clean_json_string(response.text))
+        response_text = clean_json_string(response.text)
+        
+        # Additional JSON cleanup
+        response_text = response_text.replace('\n', ' ')
+        response_text = response_text.replace('\r', ' ')
+        response_text = response_text.replace('\t', ' ')
+        
+        # Try to fix common JSON formatting issues
+        if not response_text.startswith('{'):
+            response_text = '{' + response_text.split('{', 1)[1]
+        if not response_text.endswith('}'):
+            response_text = response_text.rsplit('}', 1)[0] + '}'
+            
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError as e:
+            st.error(f"Failed to parse JSON response: {str(e)}")
+            st.code(response_text)  # Display the problematic response
+            
+            # Fallback response
+            return {
+                "explanation": "There was an error generating the lesson content. Please try again.",
+                "examples": "Examples could not be generated.",
+                "question": "Please refresh the page to try again.",
+                "expected_points": ["Understanding of core concepts", "Application of knowledge"]
+            }
+            
     except Exception as e:
         st.error(f"Error generating teaching content: {str(e)}")
         raise
