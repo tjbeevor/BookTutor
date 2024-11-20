@@ -173,112 +173,88 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     prompt = f"""
-    You are an expert teacher presenting: {topic.title}
-    Content to teach: {topic.content}
-    
-    Create a comprehensive lesson and return it in this exact JSON format:
+    Create a structured lesson about: {topic.title}
+    Main content: {topic.content}
+
+    Provide your response in this EXACT format without any deviations:
     {{
-        "explanation": "Your detailed lesson content here",
-        "examples": "Your practical examples here",
-        "question": "Your knowledge check question here",
-        "key_points": ["point1", "point2", "point3"]
+        "explanation": "Write a detailed, multi-paragraph explanation here that introduces and explains the key concepts",
+        "examples": "Provide 2-3 specific, real-world examples that illustrate these concepts",
+        "question": "Write a specific question that tests understanding of both the concepts and examples provided",
+        "key_points": ["key point 1", "key point 2", "key point 3"]
     }}
 
-    Guidelines for your response:
-    1. Explanation should:
-       - Start with a clear introduction
-       - Break down core concepts step by step
-       - Use clear language
-       - Build on previous knowledge
-       - Explain relationships between ideas
-       - Be 3-4 paragraphs long
-       - Use bullet points for key concepts
-       - Show practical relevance
+    Your response should meet these criteria:
 
-    2. Examples should:
-       - Start with simple examples
-       - Progress to complex applications
-       - Show real-world relevance
-       - Connect to main concepts
-       - Include specific scenarios
-       - Use code examples where appropriate
-       - Explain each example's purpose
+    1. The explanation must:
+       - Introduce the topic clearly
+       - Break down key concepts
+       - Build understanding progressively
+       - Connect ideas logically
+       - Use clear, precise language
 
-    3. Question should:
-       - Test both concepts and applications
+    2. The examples must:
+       - Directly relate to the explanation
+       - Show real-world applications
+       - Move from simple to complex
+       - Demonstrate practical relevance
+
+    3. The question must:
+       - Test understanding of both concepts and examples covered
+       - Be specific to what was taught
        - Require analytical thinking
-       - Be specific to the material covered
-       - Focus on key learning points
-       - Encourage critical thinking
 
-    4. Key points should:
-       - List 3-4 main concepts
-       - Include theoretical and practical points
-       - Focus on essential learning outcomes
-
-    IMPORTANT: 
-    - Keep all content within the JSON structure
-    - Focus on depth and clarity
-    - Make examples concrete and practical
-    - Ensure content builds understanding progressively
-    - Keep formatting simple and clean
+    CRITICAL: Return ONLY the JSON object. No additional text or formatting.
     """
-    
+
     try:
         response = model.generate_content(prompt)
-        response_text = response.parts[0].text
+        response_text = response.parts[0].text.strip()
         
-        # Clean up the response
-        response_text = clean_json_string(response_text)
+        # Remove any markdown formatting or extra content
+        if '```json' in response_text:
+            response_text = response_text.split('```json')[1].split('```')[0]
         
-        # Extract the first complete JSON object
-        def extract_first_json(text):
-            start = text.find('{')
-            if start == -1:
-                return None
-            
-            count = 0
-            for i in range(start, len(text)):
-                if text[i] == '{':
-                    count += 1
-                elif text[i] == '}':
-                    count -= 1
-                    if count == 0:
-                        return text[start:i+1]
-            return None
-        
-        # Get the first complete JSON object
-        json_str = extract_first_json(response_text)
-        if not json_str:
-            raise ValueError("No valid JSON object found in response")
-            
-        # Clean up the extracted JSON
-        json_str = json_str.replace('\n', ' ')
-        json_str = json_str.replace('\r', ' ')
-        json_str = json_str.replace('\t', ' ')
-        json_str = json_str.replace('**', '')
-        
+        # Ensure we have a clean JSON string
+        response_text = response_text.strip()
+        if not response_text.startswith('{'):
+            response_text = response_text[response_text.find('{'):]
+        if not response_text.endswith('}'):
+            response_text = response_text[:response_text.rfind('}')+1]
+
         try:
-            content = json.loads(json_str)
+            lesson_content = json.loads(response_text)
             
-            # Validate content
-            if not all(key in content for key in ["explanation", "examples", "question", "key_points"]):
-                raise ValueError("Missing required keys in response")
-            
-            return content
-            
-        except json.JSONDecodeError as e:
-            st.error(f"Failed to parse teaching content JSON: {str(e)}")
+            # Validate the content structure
+            required_keys = ["explanation", "examples", "question", "key_points"]
+            if not all(key in lesson_content for key in required_keys):
+                raise ValueError("Missing required content sections")
+                
+            return lesson_content
+
+        except json.JSONDecodeError:
+            # If JSON parsing fails, create a structured response from the topic content
             return {
-                "explanation": topic.content,
-                "examples": "Let's look at some concrete examples to understand this better.",
-                "question": "Based on what we've covered, explain the key concepts in your own words.",
-                "key_points": ["Core concepts", "Practical applications", "Key principles"]
+                "explanation": f"Let's understand {topic.title}:\n\n{topic.content}",
+                "examples": "We'll examine this through practical examples:\n\n" + 
+                           "1. [First relevant example based on the content]\n" +
+                           "2. [Second example showing practical application]",
+                "question": f"Based on our discussion of {topic.title}, explain how [key concept] impacts [relevant aspect].",
+                "key_points": [
+                    "Understanding the core concepts",
+                    "Practical applications",
+                    "Real-world implications"
+                ]
             }
             
     except Exception as e:
-        st.error(f"Error generating teaching content: {str(e)}")
-        raise
+        st.error(f"Error generating content: {str(e)}")
+        return {
+            "explanation": topic.content,
+            "examples": "Let's examine some practical applications.",
+            "question": "What are the key concepts you've learned?",
+            "key_points": ["Core concepts", "Applications", "Implications"]
+        }
 def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
     prompt = f"""
     Topic: {topic.title}
