@@ -398,7 +398,97 @@ Can you explain the main concepts of {topic.title}?
         "key_points": ["Basic understanding of concepts"]
     }
 
+def evaluate_response(user_response: str, expected_points: List[str], current_topic: Topic, model) -> dict:
+    try:
+        # Create a detailed evaluation prompt
+        prompt = f"""
+        Evaluate this response about {current_topic.title}.
+        
+        User response: {user_response}
+        
+        Expected key points: {', '.join(expected_points)}
+        
+        Return a JSON object with exactly this structure:
+        {{
+            "strengths": [
+                "Specific strength 1",
+                "Specific strength 2"
+            ],
+            "areas_for_improvement": [
+                "Specific area 1",
+                "Specific area 2"
+            ],
+            "understanding_level": 75,
+            "detailed_feedback": "Constructive explanation of the evaluation",
+            "key_misconceptions": [
+                "Any misconception 1",
+                "Any misconception 2"
+            ],
+            "suggested_review": [
+                "Specific topic to review 1",
+                "Specific topic to review 2"
+            ]
+        }}
+        
+        The understanding_level should be a number between 0 and 100.
+        Provide specific, actionable feedback in each category.
+        """
+        
+        # Generate evaluation using the model
+        response = model.generate_content(prompt)
+        evaluation = json.loads(clean_json_string(response.text))
+        
+        # Format the feedback with improved styling
+        feedback = f"""
+## Feedback Analysis 📊
 
+### ✅ Strengths Demonstrated
+{"".join(f"- {strength}\n" for strength in evaluation.get('strengths', ['No specific strengths identified.']))}
+
+### 📝 Areas for Improvement
+{"".join(f"- {area}\n" for area in evaluation.get('areas_for_improvement', ['No specific areas identified.']))}
+
+### 💡 Detailed Feedback
+{evaluation.get('detailed_feedback', 'No detailed feedback available.')}
+
+### ⚠️ Key Points to Review
+{"".join(f"- {point}\n" for point in evaluation.get('key_misconceptions', ['No specific points identified.']))}
+
+### 📚 Suggested Review Topics
+{"".join(f"- {topic}\n" for topic in evaluation.get('suggested_review', ['No specific topics identified.']))}
+
+### Understanding Level
+{'▰' * int(evaluation.get('understanding_level', 50)/10)}{'▱' * (10-int(evaluation.get('understanding_level', 50)/10))} {evaluation.get('understanding_level', 50)}%
+
+---
+*Moving to next topic...*
+"""
+        
+        return {
+            "feedback": feedback,
+            "understanding_level": int(evaluation.get('understanding_level', 50))
+        }
+        
+    except Exception as e:
+        st.error(f"Error evaluating response: {str(e)}")
+        return {
+            "feedback": """
+## Feedback Analysis 📊
+
+### ✅ Response Received
+Thank you for your response. Due to a processing error, detailed feedback couldn't be generated.
+
+### 📝 Next Steps
+- Please continue with the next topic
+- If issues persist, try refreshing the page
+
+Understanding Level: 50%
+
+---
+*Moving to next topic...*
+""",
+            "understanding_level": 50
+        }
 def main():
     # Page configuration
     st.set_page_config(
