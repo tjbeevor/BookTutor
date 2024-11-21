@@ -434,6 +434,72 @@ Key Takeaways:
                 }
             time.sleep(1)
 
+def evaluate_response(user_response: str, expected_points: List[str], current_topic: Topic, model) -> dict:
+    """
+    Evaluate user's response against expected learning points.
+    
+    Args:
+        user_response: The user's answer text
+        expected_points: List of key points that should be covered
+        current_topic: Current topic being discussed
+        model: The AI model instance
+    
+    Returns:
+        dict: Contains feedback and complete answer
+    """
+    prompt = f"""
+    Evaluate this response about {current_topic.title}.
+    
+    User's response:
+    {user_response}
+    
+    Expected key points:
+    {" - " + "\n - ".join(expected_points)}
+    
+    Provide an evaluation in this JSON format:
+    {{
+        "feedback": "Detailed, constructive feedback on the response, highlighting strengths and areas for improvement",
+        "complete_answer": "A comprehensive explanation of the topic, incorporating all key points",
+        "understanding_level": "A number from 0-100 indicating comprehension level"
+    }}
+    
+    Make the feedback encouraging but thorough. Include specific examples from their response.
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        response_text = clean_json_string(response.text)
+        evaluation = json.loads(response_text)
+        
+        # Format the feedback and complete answer with markdown
+        formatted_feedback = f"""
+#### Feedback on Your Understanding
+{evaluation['feedback']}
+
+#### Complete Explanation
+{evaluation['complete_answer']}
+
+Understanding Level: {evaluation['understanding_level']}%
+"""
+        
+        return {
+            "feedback": formatted_feedback,
+            "complete_answer": evaluation['complete_answer'],
+            "understanding_level": int(evaluation['understanding_level'])
+        }
+        
+    except Exception as e:
+        st.error(f"Error evaluating response: {str(e)}")
+        return {
+            "feedback": """
+#### Feedback on Your Understanding
+Thank you for your response. Let's review the key points to ensure complete understanding.
+
+#### Complete Explanation
+""" + current_topic.content,
+            "complete_answer": current_topic.content,
+            "understanding_level": 50
+        }
 
 def main():
     # 1. Page Configuration
