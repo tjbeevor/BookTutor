@@ -146,7 +146,7 @@ def clean_json_string(json_str: str) -> str:
 
 def generate_tutorial_structure(content: str, model) -> List[Topic]:
     """
-    Generate a structured tutorial breakdown with safe quote handling.
+    Generate a structured tutorial breakdown with enhanced JSON resilience.
     """
     def chunk_content(text: str, max_chunk_size: int = 3000) -> List[str]:
         paragraphs = text.split('\n\n')
@@ -168,141 +168,132 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
             
         return chunks
 
-    def safe_json_loads(json_str: str, context: str = "") -> dict:
-        """Safely parse JSON with enhanced quote handling"""
+    def preprocess_json(text: str) -> str:
+        """Aggressively preprocess text to create valid JSON"""
+        # First, find the JSON-like content
         try:
-            # Remove any markdown formatting and find JSON
-            clean_str = json_str.replace("```json", "").replace("```", "")
-            start_idx = clean_str.find('{')
-            end_idx = clean_str.rfind('}') + 1
+            # Remove markdown formatting
+            text = text.replace("```json", "")
+            text = text.replace("```", "")
             
-            if start_idx == -1 or end_idx == 0:
-                st.warning(f"No valid JSON structure found in {context}")
-                return {"subject": "", "lessons": []}
-                
-            json_str = clean_str[start_idx:end_idx]
+            # Find the first { and last }
+            start = text.find('{')
+            end = text.rfind('}')
+            if start == -1 or end == -1:
+                return "{}"
             
-            # Handle nested quotes
-            json_str = json_str.replace('\n', '\\n')  # Escape newlines
-            json_str = json_str.replace('"s', "'s")  # Replace possessive quotes
-            json_str = json_str.replace('\"', '"')   # Handle escaped quotes
+            text = text[start:end + 1]
             
-            # Normalize quotes
-            in_string = False
-            result = []
-            for char in json_str:
-                if char == '"':
-                    in_string = not in_string
-                if char == "'" and not in_string:
-                    char = '"'
-                result.append(char)
-            json_str = ''.join(result)
+            # Replace single quotes with double quotes
+            text = text.replace("'", '"')
             
-            return json.loads(json_str)
+            # Ensure property names are properly quoted
+            import re
+            text = re.sub(r'([{,]\s*)(\w+)(\s*:)', r'\1"\2"\3', text)
+            
+            # Remove trailing commas
+            text = re.sub(r',(\s*[}\]])', r'\1', text)
+            
+            # Properly escape special characters in content
+            text = text.replace('\n', '\\n')
+            text = text.replace('\r', '\\r')
+            text = text.replace('\t', '\\t')
+            
+            return text
             
         except Exception as e:
-            st.warning(f"JSON parsing error in {context}: {str(e)}")
-            # Try alternate parsing approach
-            try:
-                import re
-                # Extract lessons array using regex
-                lessons_match = re.search(r'"lessons"\s*:\s*(\[.*?\])', json_str, re.DOTALL)
-                if lessons_match:
-                    lessons_str = lessons_match.group(1)
-                    # Parse individual lessons
-                    lessons = []
-                    lesson_matches = re.finditer(r'{[^{}]*}', lessons_str)
-                    for match in lesson_matches:
-                        try:
-                            lesson_json = "{" + match.group(0).strip('{}') + "}"
-                            lesson = json.loads(lesson_json)
-                            lessons.append(lesson)
-                        except:
-                            continue
-                    return {"subject": "", "lessons": lessons}
-            except:
-                pass
-            return {"subject": "", "lessons": []}
+            st.warning(f"Error preprocessing JSON: {str(e)}")
+            return "{}"
+
+    def safe_parse_response(response_text: str, context: str = "") -> dict:
+        """Safely parse model response into structured data"""
+        try:
+            # Clean and parse JSON
+            json_str = preprocess_json(response_text)
+            return json.loads(json_str)
+        except Exception as e:
+            st.warning(f"Error parsing {context}: {str(e)}")
+            # Return empty structure
+            return {
+                "title": "Error parsing content",
+                "lessons": []
+            }
 
     try:
-        # Initial analysis with simplified prompt
-        analysis_prompt = """
-        Analyze this content and create micro-lessons.
-        Return only this exact format:
-        {
-          "subject": "main subject",
-          "lessons": [
-            {
-              "title": "lesson title",
-              "prereqs": ["prerequisite"],
-              "outcome": "learning outcome"
-            }
-          ]
-        }
+        # Initial analysis with very explicit prompt format
+        analysis_prompt = f"""
+        Create a learning structure for this content. Return only a JSON object in this exact format:
         
-        Use only straight quotes (") not curly quotes.
-        Do not use quotes within text content.
+        {{
+            "title": "Main Topic Title",
+            "lessons": [
+                {{
+                    "title": "Lesson 1 Title",
+                    "content": "Lesson content",
+                    "key_points": ["point 1", "point 2"],
+                    "practice": ["practice item 1"],
+                    "prerequisites": [],
+                    "difficulty": "beginner"
+                }}
+            ]
+        }}
+
+        Content:
+        {content[:3000]}
         """
         
-        response = model.generate_content(analysis_prompt + "\n\nContent:\n" + content[:3000])
-        analysis = safe_json_loads(response.text, "initial analysis")
-        
-        main_subject = analysis.get('subject', 'the subject')
-        lesson_sequence = [lesson.get('title') for lesson in analysis.get('lessons', [])]
-        prereq_map = {lesson.get('title'): lesson.get('prereqs', []) 
-                     for lesson in analysis.get('lessons', [])}
+        # Get initial analysis
+        response = model.generate_content(analysis_prompt)
+        initial_structure = safe_parse_response(response.text, "initial analysis")
         
         # Process content in chunks
         chunks = chunk_content(content)
         all_topics = []
         
+        # Track prerequisites and sequence
+        topic_prereqs = {}
+        topic_sequence = []
+
         for chunk_idx, chunk in enumerate(chunks):
             chunk_prompt = f"""
-            Create focused micro-lessons for this {main_subject} content.
-            Each lesson must cover exactly ONE specific concept.
-            
-            Use only straight quotes (") not curly quotes.
-            Do not use quotes within text content.
-            Use simple punctuation.
-            
-            Return only this exact format:
+            Create micro-lessons for this content section. 
+            Each lesson should cover ONE specific concept.
+            Return only a JSON object exactly like this:
+
             {{
-              "lessons": [
-                {{
-                  "title": "specific title",
-                  "content": "clear explanation",
-                  "prereqs": ["prerequisite"],
-                  "key_points": ["main point"],
-                  "practice": ["activity"],
-                  "outcome": "specific goal",
-                  "level": "beginner"
-                }}
-              ]
+                "lessons": [
+                    {{
+                        "title": "Specific Lesson Title",
+                        "content": "Clear explanation without quotes",
+                        "key_points": ["Point 1", "Point 2"],
+                        "practice": ["Practice item 1"],
+                        "prerequisites": ["Prior topic"],
+                        "difficulty": "beginner"
+                    }}
+                ]
             }}
-            
-            Content chunk:
+
+            Content section:
             {chunk}
             """
             
-            max_retries = 3
+            max_retries = 2
             for attempt in range(max_retries):
                 try:
                     response = model.generate_content(chunk_prompt)
-                    structure = safe_json_loads(response.text, f"chunk {chunk_idx + 1}")
+                    chunk_structure = safe_parse_response(response.text, f"chunk {chunk_idx + 1}")
                     
-                    if "lessons" in structure and structure["lessons"]:
+                    if "lessons" in chunk_structure:
                         # Process each lesson
-                        for lesson in structure["lessons"]:
-                            if not any(similar_titles(existing.get('title', ''), lesson.get('title', '')) 
+                        for lesson in chunk_structure["lessons"]:
+                            # Check for duplicates
+                            if not any(similar_titles(existing.get('title', ''), lesson.get('title', ''))
                                      for existing in all_topics):
-                                # Add known prerequisites
-                                lesson['prereqs'] = list(set(
-                                    prereq_map.get(lesson.get('title', ''), []) +
-                                    lesson.get('prereqs', [])
-                                ))
+                                # Track prerequisites and sequence
+                                topic_prereqs[lesson.get('title', '')] = lesson.get('prerequisites', [])
+                                topic_sequence.append(lesson.get('title', ''))
                                 all_topics.append(lesson)
                         break
-                    
                 except Exception as e:
                     if attempt == max_retries - 1:
                         st.warning(f"Failed to process chunk {chunk_idx + 1}: {str(e)}")
@@ -314,23 +305,30 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
                 return False
             title1_words = set(title1.lower().strip().split())
             title2_words = set(title2.lower().strip().split())
-            return len(title1_words & title2_words) >= min(len(title1_words), len(title2_words)) * 0.7
+            common_words = title1_words & title2_words
+            return len(common_words) >= min(len(title1_words), len(title2_words)) * 0.7
 
-        # Sort topics based on sequence and prerequisites
+        # Sort topics based on prerequisites and sequence
         def get_topic_score(topic: dict) -> tuple:
-            sequence_pos = next((i for i, seq in enumerate(lesson_sequence) 
-                               if similar_titles(topic.get('title', ''), seq)), len(lesson_sequence))
-            prereq_count = len(topic.get('prereqs', []))
-            level_score = {'beginner': 0, 'intermediate': 1, 'advanced': 2}
-            level = level_score.get(topic.get('level', 'beginner'), 0)
-            return (sequence_pos, prereq_count, level)
+            # Get position in original sequence
+            seq_pos = topic_sequence.index(topic.get('title', '')) if topic.get('title', '') in topic_sequence else len(topic_sequence)
+            
+            # Count prerequisites
+            prereq_count = len(topic_prereqs.get(topic.get('title', ''), []))
+            
+            # Get difficulty score
+            diff_map = {'beginner': 0, 'intermediate': 1, 'advanced': 2}
+            diff_score = diff_map.get(topic.get('difficulty', 'beginner'), 0)
+            
+            return (prereq_count, diff_score, seq_pos)
 
+        # Sort topics
         all_topics.sort(key=get_topic_score)
 
-        # Convert to Topic objects with clear structure
+        # Convert to Topic objects
         def create_topic(topic_data: dict) -> Topic:
             content = f"""Learning Outcome:
-{topic_data.get('outcome', 'Not specified')}
+Master the concept of {topic_data.get('title', 'this topic')}
 
 Key Points:
 {chr(10).join('- ' + point for point in topic_data.get('key_points', []))}
@@ -342,7 +340,7 @@ Practice Activities:
 {chr(10).join('- ' + practice for practice in topic_data.get('practice', []))}
 
 Prerequisites:
-{chr(10).join('- ' + prereq for prereq in topic_data.get('prereqs', []))}
+{chr(10).join('- ' + prereq for prereq in topic_data.get('prerequisites', []))}
 """
             return Topic(
                 title=topic_data.get('title', 'Untitled Topic'),
@@ -355,11 +353,11 @@ Prerequisites:
         final_topics = [create_topic(t) for t in all_topics if isinstance(t, dict)]
         
         if not final_topics:
-            st.warning("No topics generated, creating default structure")
+            st.warning("No valid topics generated, creating default structure")
             final_topics = [
                 Topic(
-                    title=f"Introduction to {main_subject}",
-                    content="Basic introduction to the subject matter.",
+                    title=initial_structure.get('title', 'Getting Started'),
+                    content="Introduction to the subject matter.",
                     subtopics=[],
                     completed=False
                 )
