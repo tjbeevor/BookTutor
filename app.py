@@ -1,4 +1,3 @@
-# 1. KEEP THESE IMPORTS AT THE TOP
 import streamlit as st
 from typing import Dict, List, Any
 import json
@@ -8,7 +7,6 @@ import docx
 import io
 from functools import lru_cache
 
-# 2. KEEP THIS FUNCTION
 def initialize_model():
     """Initialize or get the Google Gemini model"""
     try:
@@ -37,7 +35,7 @@ class EnhancedTeacher:
         self.model = model
 
     def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
-        """Enhanced document analysis with improved error handling and JSON processing"""
+        """Enhanced document analysis with proper Gemini response handling"""
         try:
             text_content = content['text']
             sections = self._split_into_chunks(text_content)
@@ -52,7 +50,7 @@ class EnhancedTeacher:
                 
                 Content to analyze:
                 {section[:4000]}
-    
+
                 Respond with ONLY the following JSON structure:
                 {{
                     "title": "Clear and specific section title",
@@ -87,7 +85,7 @@ class EnhancedTeacher:
                     "difficulty": "beginner",
                     "estimated_time": "30 minutes"
                 }}"""
-    
+
                 try:
                     response = self.model.generate_content(
                         prompt,
@@ -97,15 +95,22 @@ class EnhancedTeacher:
                             'top_k': 40
                         }
                     )
-    
+                    
+                    # Properly handle Gemini response
+                    if response.candidates and response.candidates[0].content.parts:
+                        response_text = response.candidates[0].content.parts[0].text
+                    else:
+                        st.warning("Empty response from model")
+                        continue
+
                     # Clean and parse response with improved error handling
-                    response_text = self._clean_json_text(response.text)
+                    response_text = self._clean_json_text(response_text)
                     try:
                         topic = json.loads(response_text)
                     except json.JSONDecodeError:
                         st.warning(f"Failed to parse section response. Using fallback structure.")
                         topic = self._create_fallback_structure(section[:1000])
-    
+
                     if self._validate_topic(topic):
                         topic = self._enhance_topic(topic, section)
                         all_topics.append(topic)
@@ -113,17 +118,17 @@ class EnhancedTeacher:
                         fallback = self._create_fallback_structure(section[:1000])
                         all_topics.append(fallback)
                         st.warning(f"Using fallback structure for section due to validation failure")
-    
+
                 except Exception as e:
                     st.warning(f"Processing error for section: {str(e)}")
                     fallback = self._create_fallback_structure(section[:1000])
                     all_topics.append(fallback)
                     continue
-    
+
             # Post-process all topics to ensure coherent flow
             processed_topics = self._post_process_topics(all_topics) if all_topics else [self._create_fallback_structure(text_content)]
             return processed_topics
-    
+
         except Exception as e:
             st.error(f"Error in document analysis: {str(e)}")
             return [self._create_fallback_structure(text_content)]
@@ -172,7 +177,7 @@ class EnhancedTeacher:
                 # If all fixes fail, create a minimal valid JSON structure
                 st.warning(f"Failed to parse JSON response. Creating fallback structure.")
                 return json.dumps(self._create_fallback_structure("Content parsing error"))
-    
+
         except Exception as e:
             st.error(f"Error cleaning JSON text: {str(e)}")
             return json.dumps(self._create_fallback_structure("Content parsing error"))
@@ -308,8 +313,33 @@ class EnhancedTeacher:
         
         return processed_topics
 
+    def _create_fallback_structure(self, content: str) -> Dict:
+        """Create more informative fallback structure when parsing fails"""
+        return {
+            'title': 'Content Section',
+            'learning_objectives': ['Understand the key concepts in this section'],
+            'key_points': ['Review the main points presented in this material'],
+            'content': content[:1000] + ("..." if len(content) > 1000 else ""),
+            'practical_exercises': ['Summarize the main concepts presented'],
+            'knowledge_check': {
+                'questions': [{
+                    'question': 'What are the main topics covered in this section?',
+                    'options': [
+                        'Review the content to identify key topics',
+                        'Analyze the main concepts presented',
+                        'Summarize the key points',
+                        'All of the above'
+                    ],
+                    'correct_answer': 'All of the above',
+                    'explanation': 'A thorough review of the content will help identify and understand the key topics.'
+                }]
+            },
+            'difficulty': 'beginner',
+            'estimated_time': '15 minutes'
+        }
+
     def teach_topic(self, topic: Dict, user_progress: Dict) -> str:
-        """Generate engaging lesson content"""
+        """Generate engaging lesson content with proper response handling"""
         try:
             prompt = f"""
             Create an engaging lesson for: {topic['title']}
@@ -338,38 +368,17 @@ class EnhancedTeacher:
             """
 
             response = self.model.generate_content(prompt)
-            return response.text
+            
+            # Properly handle Gemini response
+            if response.candidates and response.candidates[0].content.parts:
+                return response.candidates[0].content.parts[0].text
+            else:
+                return "Error: Unable to generate lesson content."
 
         except Exception as e:
             st.error(f"Error generating lesson: {str(e)}")
             return "Error generating lesson content."
 
-    def _create_fallback_structure(self, content: str) -> Dict:
-        """Create more informative fallback structure when parsing fails"""
-        return {
-            'title': 'Content Section',
-            'learning_objectives': ['Understand the key concepts in this section'],
-            'key_points': ['Review the main points presented in this material'],
-            'content': content[:1000] + ("..." if len(content) > 1000 else ""),
-            'practical_exercises': ['Summarize the main concepts presented'],
-            'knowledge_check': {
-                'questions': [{
-                    'question': 'What are the main topics covered in this section?',
-                    'options': [
-                        'Review the content to identify key topics',
-                        'Analyze the main concepts presented',
-                        'Summarize the key points',
-                        'All of the above'
-                    ],
-                    'correct_answer': 'All of the above',
-                    'explanation': 'A thorough review of the content will help identify and understand the key topics.'
-                }]
-            },
-            'difficulty': 'beginner',
-            'estimated_time': '15 minutes'
-        }
-
-# 4. KEEP THIS FUNCTION
 def process_text_from_file(file_content, file_type) -> str:
     """Process uploaded file content"""
     try:
@@ -392,7 +401,6 @@ def process_text_from_file(file_content, file_type) -> str:
     except Exception as e:
         raise Exception(f"Error processing file: {str(e)}")
 
-# 5. KEEP THIS FUNCTION
 def reset_application():
     """Reset the application state"""
     for key in list(st.session_state.keys()):
@@ -400,7 +408,6 @@ def reset_application():
             del st.session_state[key]
     st.rerun()
 
-# 6. KEEP THE MAIN FUNCTION AND EVERYTHING ELSE
 def main():
     """Main application function"""
     st.set_page_config(
