@@ -190,59 +190,142 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     try:
+        # Enhanced prompt to get richer content
         prompt = f"""
-        Create a micro-lesson about: {topic.title}
-        The content should include detailed explanations, examples, and practice questions.
-        Return a JSON object with exactly this structure:
+        Create a comprehensive educational module about: {topic.title}
+        
+        Return a detailed JSON object with this exact structure:
         {{
-            "overview": "Brief introduction to the concept",
-            "key_points": ["Main point 1", "Main point 2", "Main point 3"],
-            "detailed_explanation": "In-depth explanation with examples",
-            "example_scenario": {{
-                "situation": "Real-world scenario description",
-                "application": "How the concept applies",
-                "outcome": "Result or learning from the scenario"
+            "overview": {{
+                "basic_definition": "Clear, concise definition of the topic",
+                "context": "Broader context and importance in today's world",
+                "key_benefits": ["Benefit 1", "Benefit 2", "Benefit 3", "Benefit 4"],
+                "historical_context": "Brief evolution and development of the topic",
+                "statistics": [
+                    {{"stat": "Statistical fact 1", "impact": "Why this matters"}},
+                    {{"stat": "Statistical fact 2", "impact": "Why this matters"}},
+                    {{"stat": "Statistical fact 3", "impact": "Why this matters"}}
+                ],
+                "practical_relevance": "How this applies to daily life",
+                "global_impact": "Broader societal and community implications"
             }},
-            "practice_question": "Understanding check question",
+            "key_points": [
+                {{
+                    "point": "Main point",
+                    "explanation": "Detailed explanation",
+                    "importance": "Why this matters"
+                }}
+            ],
+            "detailed_explanation": {{
+                "main_concepts": [
+                    {{
+                        "title": "Concept title",
+                        "description": "Detailed description",
+                        "steps": ["Step 1", "Step 2", "Step 3"],
+                        "important_notes": ["Note 1", "Note 2"]
+                    }}
+                ]
+            }},
+            "example_scenario": {{
+                "situation": "Detailed real-world scenario",
+                "application_steps": ["Step 1", "Step 2", "Step 3"],
+                "critical_decisions": ["Decision point 1", "Decision point 2"],
+                "outcome": {{
+                    "immediate_results": "What happens right away",
+                    "long_term_impact": "Long-term effects",
+                    "lessons_learned": ["Lesson 1", "Lesson 2"]
+                }}
+            }},
+            "practice_question": {{
+                "main_question": "Primary question",
+                "sub_questions": ["Sub-question 1", "Sub-question 2", "Sub-question 3"],
+                "key_considerations": ["Consideration 1", "Consideration 2"]
+            }},
             "expected_points": ["Expected response point 1", "Expected response point 2"]
         }}
+        
+        Make the content detailed, practical, and engaging. Include relevant statistics and real-world applications.
         """
         
         response = model.generate_content(prompt)
         content = json.loads(clean_json_string(response.text))
         
-        # Format the content without code blocks
+        # Format the content with enhanced structure
         formatted_content = f"""
 # {topic.title} 📚
 
 ## Overview 📋
-{content.get('overview', 'Introduction to the topic.')}
+{content['overview']['basic_definition']}
+
+{content['overview']['context']}
+
+First aid skills are particularly valuable because:
+{"".join(f"- {benefit}\n" for benefit in content['overview']['key_benefits'])}
+
+{content['overview']['historical_context']}
+
+Statistics show that immediate first aid can significantly improve outcomes in emergencies:
+{"".join(f"- {stat['stat']}: {stat['impact']}\n" for stat in content['overview']['statistics'])}
+
+{content['overview']['practical_relevance']}
+
+{content['overview']['global_impact']}
 
 ## Key Points 🎯
-{"".join(f"• {point}\n" for point in content.get('key_points', []))}
+{"".join(f"• **{point['point']}**: {point['explanation']}\n" for point in content['key_points'])}
 
 ## Detailed Explanation 📝
-{content.get('detailed_explanation', '')}
+{"\n".join(f'''### {concept['title']}
+{concept['description']}
+
+Key steps:
+{"".join(f"- {step}\n" for step in concept['steps'])}
+
+Important notes:
+{"".join(f"- {note}\n" for step in concept['important_notes'])}
+''' for concept in content['detailed_explanation']['main_concepts'])}
 
 ## Real-World Example 💡
 > **Scenario**  
-> {content.get('example_scenario', {}).get('situation', '')}
+> {content['example_scenario']['situation']}
 
 > **Application**  
-> {content.get('example_scenario', {}).get('application', '')}
+{"".join(f"> {i+1}. {step}\n" for i, step in enumerate(content['example_scenario']['application_steps']))}
+
+> **Critical Decision Points**  
+{"".join(f"> - {decision}\n" for decision in content['example_scenario']['critical_decisions'])}
 
 > **Outcome**  
-> {content.get('example_scenario', {}).get('outcome', '')}
+> Immediate Results: {content['example_scenario']['outcome']['immediate_results']}
+> 
+> Long-term Impact: {content['example_scenario']['outcome']['long_term_impact']}
+> 
+> Lessons Learned:
+{"".join(f"> - {lesson}\n" for lesson in content['example_scenario']['outcome']['lessons_learned'])}
 
 ## Practice Question ✍️
-{content.get('practice_question', '')}
+{content['practice_question']['main_question']}
+
+Additional considerations:
+{"".join(f"{i+1}. {question}\n" for i, question in enumerate(content['practice_question']['sub_questions']))}
+
+Key points to address:
+{"".join(f"- {point}\n" for point in content['practice_question']['key_considerations'])}
+
+---
+**Remember**: {random.choice([
+    "Knowledge and preparation are key to effective response.",
+    "Stay calm and follow the procedures you've learned.",
+    "Every second counts - act decisively but carefully.",
+    "Your actions can make a life-changing difference."
+])}
 """
         
         return {
             "content": formatted_content,
-            "examples": content.get('example_scenario', {}),
-            "question": content.get('practice_question', ''),
-            "key_points": content.get('expected_points', [])
+            "examples": content['example_scenario'],
+            "question": content['practice_question']['main_question'],
+            "key_points": content['expected_points']
         }
         
     except Exception as e:
@@ -252,53 +335,6 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
             "examples": "Let's practice applying this concept.",
             "question": f"Can you explain the key points of {topic.title}?",
             "key_points": ["Understanding of basic concept"]
-        }
-
-def evaluate_response(user_response: str, expected_points: List[str], current_topic: Topic, model) -> dict:
-    try:
-        prompt = f"""
-        Evaluate this response about {current_topic.title}.
-        User response: {user_response}
-        Expected points: {', '.join(expected_points)}
-        
-        Return a JSON object with exactly this structure:
-        {{
-            "strengths": ["Strength 1", "Strength 2"],
-            "areas_for_improvement": ["Area 1", "Area 2"],
-            "understanding_level": 75
-        }}
-        """
-        
-        response = model.generate_content(prompt)
-        evaluation = json.loads(clean_json_string(response.text))
-        
-        # Format the feedback with improved styling
-        feedback = f"""
-        ## Feedback 📊
-
-        ### ✅ Strengths
-        {"".join(f"• {strength}\n" for strength in evaluation.get('strengths', []))}
-
-        ### 📝 Areas to Review
-        {"".join(f"• {area}\n" for area in evaluation.get('areas_for_improvement', []))}
-
-        ### Understanding Level
-        {'▰' * int(evaluation.get('understanding_level', 50)/10)}{'▱' * (10-int(evaluation.get('understanding_level', 50)/10))} {evaluation.get('understanding_level', 50)}%
-
-        ---
-        *Moving to next topic...*
-        """
-        
-        return {
-            "feedback": feedback,
-            "understanding_level": int(evaluation.get('understanding_level', 50))
-        }
-        
-    except Exception as e:
-        st.error(f"Error evaluating response: {str(e)}")
-        return {
-            "feedback": "Thank you for your response. Keep practicing!",
-            "understanding_level": 50
         }
 
 def main():
