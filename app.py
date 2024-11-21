@@ -453,7 +453,7 @@ def main():
 
     # Sidebar navigation
     with st.sidebar:
-        st.title("📚 Learning Progress")
+        st.title("Restart")
         
         if st.button("🔄 Start New Session", key="reset_button", help="Reset the application and upload a new document"):
             reset_application()
