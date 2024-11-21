@@ -5,10 +5,9 @@ import google.generativeai as genai
 import PyPDF2
 import docx
 import io
-from functools import lru_cache
 
 def initialize_model():
-    """Initialize or get the Google Gemini model"""
+    """Initialize or get the Google PaLM model"""
     try:
         if 'gemini_api_key' not in st.session_state:
             st.session_state.gemini_api_key = st.secrets.get('GOOGLE_API_KEY', '')
@@ -17,17 +16,17 @@ def initialize_model():
             st.session_state.gemini_api_key = st.text_input(
                 'Enter Google API Key:', 
                 type='password',
-                help="Enter your Google API key to access the Gemini model"
+                help="Enter your Google API key to access the PaLM model"
             )
             if not st.session_state.gemini_api_key:
                 st.warning('⚠️ Please enter your Google API key to continue.')
                 return None
         
         genai.configure(api_key=st.session_state.gemini_api_key)
-        return genai.GenerativeModel('gemini-pro')
-    
+        return 'text-bison-001'  # Use an available model
+        
     except Exception as e:
-        st.error(f"❌ Error initializing Gemini model: {str(e)}")
+        st.error(f"❌ Error initializing PaLM model: {str(e)}")
         return None
 
 class EnhancedTeacher:
@@ -45,87 +44,84 @@ class EnhancedTeacher:
             
             for section in sections:
                 prompt = """You are an expert curriculum designer. Create a detailed learning module from the provided content.
-    Your response must be a valid JSON object with no trailing commas, following this EXACT structure:
-    
-    {
-      "title": "Specific topic title",
-      "learning_objectives": [
-        "First learning objective",
-        "Second learning objective"
-      ],
-      "key_points": [
-        "First key point",
-        "Second key point"
-      ],
-      "content": "Main educational content",
-      "practical_exercises": [
-        "First exercise",
-        "Second exercise"
-      ],
-      "knowledge_check": {
-        "questions": [
-          {
-            "question": "Sample question?",
-            "options": [
-              "First option",
-              "Second option",
-              "Third option",
-              "Fourth option"
-            ],
-            "correct_answer": "First option",
-            "explanation": "Explanation of the correct answer"
-          }
-        ]
-      },
-      "difficulty": "beginner",
-      "estimated_time": "30 minutes"
-    }
-    
-    Content to analyze:
-    """
+Your response must be a valid JSON object with no trailing commas, following this EXACT structure:
+
+{
+  "title": "Specific topic title",
+  "learning_objectives": [
+    "First learning objective",
+    "Second learning objective"
+  ],
+  "key_points": [
+    "First key point",
+    "Second key point"
+  ],
+  "content": "Main educational content",
+  "practical_exercises": [
+    "First exercise",
+    "Second exercise"
+  ],
+  "knowledge_check": {
+    "questions": [
+      {
+        "question": "Sample question?",
+        "options": [
+          "First option",
+          "Second option",
+          "Third option",
+          "Fourth option"
+        ],
+        "correct_answer": "First option",
+        "explanation": "Explanation of the correct answer"
+      }
+    ]
+  },
+  "difficulty": "beginner",
+  "estimated_time": "30 minutes"
+}
+
+Content to analyze:
+"""
                 # Add the section content with clear delimiter
                 prompt += f"\n\n{section[:4000]}\n\nRespond ONLY with the JSON structure, no additional text or explanations."
-    
+
                 try:
-                    response = self.model.generate_content(
-                        prompt,
-                        generation_config={
-                            'temperature': 0.1,  # Lower temperature for more consistent output
-                            'top_p': 0.95,
-                            'top_k': 40,
-                        }
+                    response = genai.generate_text(
+                        model=self.model,
+                        prompt=prompt,
+                        temperature=0.1,
+                        top_p=0.95,
+                        top_k=40
                     )
                     
-                    # Properly handle Gemini response
-                    if response.candidates and response.candidates[0].content.parts:
-                        response_text = response.candidates[0].content.parts[0].text
-                        # Clean the response text more aggressively
-                        response_text = self._clean_json_text(response_text)
-                        
-                        try:
-                            topic = json.loads(response_text)
-                            if self._validate_topic(topic):
-                                topic = self._enhance_topic(topic, section)
-                                all_topics.append(topic)
-                                continue
-                        except json.JSONDecodeError as e:
-                            st.warning(f"JSON parsing error: {str(e)}")
+                    response_text = response.result
+                    # Clean the response text more aggressively
+                    response_text = self._clean_json_text(response_text)
+                    
+                    try:
+                        topic = json.loads(response_text)
+                        if self._validate_topic(topic):
+                            topic = self._enhance_topic(topic, section)
+                            all_topics.append(topic)
+                            continue
+                    except json.JSONDecodeError as e:
+                        st.warning(f"JSON parsing error: {str(e)}")
                     
                     # If we get here, either the response was empty or parsing failed
                     st.warning("Using fallback structure for this section")
                     fallback = self._create_fallback_structure(section[:1000])
                     all_topics.append(fallback)
-    
+
                 except Exception as e:
                     st.warning(f"Processing error for section: {str(e)}")
                     fallback = self._create_fallback_structure(section[:1000])
                     all_topics.append(fallback)
                     continue
-    
+
             # Post-process all topics to ensure coherent flow
             processed_topics = self._post_process_topics(all_topics) if all_topics else [self._create_fallback_structure(text_content)]
             return processed_topics
-    
+
         except Exception as e:
             st.error(f"Error in document analysis: {str(e)}")
             return [self._create_fallback_structure(text_content)]
@@ -177,24 +173,29 @@ class EnhancedTeacher:
             return json.dumps(self._create_fallback_structure("Content parsing error"))
 
     def _split_into_chunks(self, text: str) -> List[str]:
-        """Split content into logical sections"""
+        """Split content into logical sections with size limits"""
+        max_chunk_size = 4000  # Adjust as needed
         lines = text.split('\n')
         sections = []
         current_section = []
-        
+
         for line in lines:
             if self._is_section_header(line) and current_section:
-                sections.append('\n'.join(current_section))
+                section_text = '\n'.join(current_section).strip()
+                if section_text:
+                    sections.append(section_text)
                 current_section = [line]
             else:
                 current_section.append(line)
         
         if current_section:
-            sections.append('\n'.join(current_section))
+            section_text = '\n'.join(current_section).strip()
+            if section_text:
+                sections.append(section_text)
         
         # If no natural sections found, create chunks of reasonable size
         if len(sections) <= 1:
-            chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+            chunks = [text[i:i+max_chunk_size] for i in range(0, len(text), max_chunk_size)]
             # Ensure chunks break at sentence boundaries where possible
             return self._refine_chunks(chunks)
             
@@ -204,11 +205,15 @@ class EnhancedTeacher:
         """Refine chunk boundaries to break at natural points"""
         refined_chunks = []
         for chunk in chunks:
-            sentences = chunk.split('.')
-            if len(sentences) > 1:
-                # Remove last incomplete sentence if any
-                complete_chunk = '.'.join(sentences[:-1]) + '.'
-                refined_chunks.append(complete_chunk)
+            if len(chunk) < 4000:
+                refined_chunks.append(chunk)
+            else:
+                # Break at last full stop within chunk
+                last_period = chunk.rfind('.')
+                if last_period != -1:
+                    refined_chunks.append(chunk[:last_period+1])
+                else:
+                    refined_chunks.append(chunk)
         return refined_chunks
 
     def _is_section_header(self, line: str) -> bool:
@@ -343,38 +348,41 @@ class EnhancedTeacher:
         """Generate engaging lesson content with proper response handling"""
         try:
             prompt = f"""
-            Create an engaging lesson for: {topic['title']}
-            
-            Learning objectives:
-            {json.dumps(topic.get('learning_objectives', []), indent=2)}
-            
-            Key points:
-            {json.dumps(topic.get('key_points', []), indent=2)}
-            
-            Main content:
-            {topic.get('content', '')}
+Create an engaging lesson for: {topic['title']}
 
-            Create an engaging lesson with:
-            1. Clear introduction
-            2. Detailed explanations
-            3. Practical examples
-            4. Interactive elements
-            5. Summary and key takeaways
+Learning objectives:
+{json.dumps(topic.get('learning_objectives', []), indent=2)}
 
-            Student context:
-            - Level: {user_progress.get('understanding_level', 'beginner')}
-            - Topics completed: {len(user_progress.get('completed_topics', []))}
+Key points:
+{json.dumps(topic.get('key_points', []), indent=2)}
 
-            Use markdown formatting for clear structure and engagement.
-            """
+Main content:
+{topic.get('content', '')}
 
-            response = self.model.generate_content(prompt)
+Create an engaging lesson with:
+1. Clear introduction
+2. Detailed explanations
+3. Practical examples
+4. Interactive elements
+5. Summary and key takeaways
+
+Student context:
+- Level: {user_progress.get('understanding_level', 'beginner')}
+- Topics completed: {len(user_progress.get('completed_topics', []))}
+
+Use markdown formatting for clear structure and engagement.
+"""
+
+            response = genai.generate_text(
+                model=self.model,
+                prompt=prompt,
+                temperature=0.7,
+                max_output_tokens=1024  # Adjust as needed
+            )
             
-            # Properly handle Gemini response
-            if response.candidates and response.candidates[0].content.parts:
-                return response.candidates[0].content.parts[0].text
-            else:
-                return "Error: Unable to generate lesson content."
+            # Properly handle the response
+            lesson_content = response.result
+            return lesson_content
 
         except Exception as e:
             st.error(f"Error generating lesson: {str(e)}")
@@ -407,7 +415,7 @@ def reset_application():
     for key in list(st.session_state.keys()):
         if key != 'gemini_api_key':  # Preserve API key
             del st.session_state[key]
-    st.rerun()
+    st.experimental_rerun()
 
 def main():
     """Main application function"""
@@ -485,7 +493,8 @@ def main():
                         with col2:
                             st.caption(f"Estimated time: {topic['estimated_time']}")
                         with col3:
-                            st.caption(f"Status: {'Completed' if topic['title'] in st.session_state.user_progress['completed_topics'] else 'Not Started'}")
+                            status = 'Completed' if topic['title'] in st.session_state.user_progress['completed_topics'] else 'Not Started'
+                            st.caption(f"Status: {status}")
 
                         # Display lesson content
                         if st.button(f"Start Module {i+1}", key=f"start_module_{i}"):
@@ -513,7 +522,7 @@ def main():
                                 if topic['title'] not in st.session_state.user_progress['completed_topics']:
                                     st.session_state.user_progress['completed_topics'].append(topic['title'])
                                 st.success("Module marked as complete!")
-                                st.rerun()
+                                st.experimental_rerun()
 
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
