@@ -104,15 +104,15 @@ def initialize_model():
         return None
 
 def process_text_from_file(file_content, file_type) -> str:
-    """Enhanced file processing with better error handling and support for more formats"""
+    """Enhanced file processing with full content extraction"""
     try:
         if file_type == "application/pdf":
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
-            text = " ".join(page.extract_text() for page in pdf_reader.pages)
+            text = "\n\n".join(page.extract_text() for page in pdf_reader.pages)
             
         elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = docx.Document(io.BytesIO(file_content))
-            text = " ".join(paragraph.text for paragraph in doc.paragraphs)
+            text = "\n\n".join(paragraph.text for paragraph in doc.paragraphs)
             
         elif file_type == "text/markdown":
             text = file_content.decode()
@@ -120,116 +120,150 @@ def process_text_from_file(file_content, file_type) -> str:
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
         
-        # Clean and preprocess text
+        # Enhanced text cleaning
         text = clean_text(text)
         return text
     except Exception as e:
         raise Exception(f"Error processing file content: {str(e)}")
 
 def clean_text(text: str) -> str:
-    """Clean and preprocess text content"""
-    # Remove excessive whitespace
-    text = ' '.join(text.split())
-    # Basic normalization
-    text = text.replace('\n\n', '\n').strip()
-    return text
+    """Enhanced text cleaning with structure preservation"""
+    # Preserve section breaks and formatting
+    lines = text.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        if line:
+            # Preserve headers and important formatting
+            if line.isupper() or ':' in line[:20]:
+                cleaned_lines.append(f"\n{line}\n")
+            else:
+                cleaned_lines.append(line)
+    
+    return '\n'.join(cleaned_lines)
 
 class EnhancedTeacher:
-    def __init__(self, model):
-        self.model = model
-
     def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
-        """Enhanced document analysis with comprehensive learning structure"""
+        """Enhanced document analysis with comprehensive content processing"""
         try:
             text_content = content['text']
             
-            prompt = f"""
-            You are an expert curriculum designer and instructor. Analyze this educational content
-            and create a comprehensive learning structure:
-
-            Content to analyze:
-            {text_content[:2000]}...
-
-            Create a structured curriculum that includes:
-            1. Clear learning objectives for each section
-            2. Key concepts and principles
-            3. Practical exercises and examples
-            4. Knowledge check questions
-            5. Real-world applications
-            6. Additional resources and tips
-
-            Format as JSON:
-            {{
-                "topics": [
-                    {{
-                        "title": "Topic title",
-                        "learning_objectives": ["objective 1", "objective 2"],
-                        "key_points": ["point 1", "point 2"],
-                        "practical_exercises": ["exercise 1", "exercise 2"],
-                        "knowledge_check": {{
-                            "questions": [
-                                {{
-                                    "question": "Question text",
-                                    "options": ["option 1", "option 2", "option 3", "option 4"],
-                                    "correct_answer": "Correct option",
-                                    "explanation": "Why this is correct"
-                                }}
-                            ]
-                        }},
-                        "real_world_applications": ["application 1", "application 2"],
-                        "additional_resources": ["resource 1", "resource 2"],
-                        "content": "Main content text",
-                        "estimated_time": "30 minutes",
-                        "difficulty": "beginner"
-                    }}
-                ]
-            }}
-            """
-
-            response = self.model.generate_content(prompt)
+            # Split content into manageable chunks while preserving structure
+            chunks = self._split_into_chunks(text_content)
+            topics = []
             
-            try:
-                json_str = self._extract_json(response.text)
-                structure = json.loads(json_str)
+            for chunk in chunks:
+                prompt = f"""
+                Analyze this section of educational content and create a detailed learning structure:
+
+                Content to analyze:
+                {chunk}
+
+                Create a comprehensive curriculum section that includes:
+                1. Clear learning objectives
+                2. Key concepts and principles
+                3. Practical exercises and examples
+                4. Knowledge check questions
+                5. Real-world applications
+                6. Additional resources and tips
+
+                Important: Preserve all meaningful content from the source material.
+                Maintain the original structure and flow of ideas.
+                Create specific, actionable learning objectives.
+
+                Format as JSON:
+                {{
+                    "title": "Section title",
+                    "learning_objectives": ["objective 1", "objective 2"],
+                    "key_points": ["point 1", "point 2"],
+                    "practical_exercises": ["exercise 1", "exercise 2"],
+                    "knowledge_check": {{
+                        "questions": [
+                            {{
+                                "question": "Question text",
+                                "options": ["option 1", "option 2", "option 3", "option 4"],
+                                "correct_answer": "Correct option",
+                                "explanation": "Why this is correct"
+                            }}
+                        ]
+                    }},
+                    "real_world_applications": ["application 1", "application 2"],
+                    "additional_resources": ["resource 1", "resource 2"],
+                    "content": "Main content text",
+                    "estimated_time": "30 minutes",
+                    "difficulty": "beginner"
+                }}
+                """
+
+                response = self.model.generate_content(prompt)
                 
-                # Validate and process the structure
-                if 'topics' not in structure:
-                    structure = {'topics': []}
-                
-                return structure['topics']
-                
-            except json.JSONDecodeError as e:
-                st.error(f"❌ Error parsing curriculum structure: {str(e)}")
-                return self._create_fallback_structure(text_content)
+                try:
+                    topic = json.loads(self._extract_json(response.text))
+                    topics.append(topic)
+                except json.JSONDecodeError:
+                    continue
+
+            # Post-process topics to ensure coherent flow
+            processed_topics = self._post_process_topics(topics)
+            return processed_topics
 
         except Exception as e:
             st.error(f"❌ Error analyzing document: {str(e)}")
             return self._create_fallback_structure(text_content)
 
-    def _extract_json(self, text: str) -> str:
-        """Extract JSON content from text"""
-        start = text.find('{')
-        end = text.rfind('}') + 1
-        if start != -1 and end != 0:
-            return text[start:end]
-        raise ValueError("No JSON object found in response")
+    def _split_into_chunks(self, text: str) -> List[str]:
+        """Split content into logical sections while preserving structure"""
+        # Split on major section breaks
+        sections = []
+        current_section = []
+        lines = text.split('\n')
+        
+        for line in lines:
+            # Detect major section breaks (e.g., headers, numbered sections)
+            if (line.isupper() and len(line) > 10) or \
+               (line.strip().startswith(('Chapter', 'Section', '#')) and len(line) < 100):
+                if current_section:
+                    sections.append('\n'.join(current_section))
+                current_section = [line]
+            else:
+                current_section.append(line)
+        
+        if current_section:
+            sections.append('\n'.join(current_section))
+        
+        return sections
 
-    def _create_fallback_structure(self, content: str) -> List[Dict]:
-        """Create a basic structure when full analysis fails"""
-        return [{
-            'title': 'Document Overview',
-            'learning_objectives': ['Understand the main concepts'],
-            'key_points': ['Key concepts from the document'],
-            'content': content[:1000],
-            'difficulty': 'beginner',
-            'estimated_time': '15 minutes'
-        }]
+    def _post_process_topics(self, topics: List[Dict]) -> List[Dict]:
+        """Ensure topics flow logically and maintain document structure"""
+        processed_topics = []
+        current_difficulty = "beginner"
+        
+        for i, topic in enumerate(topics):
+            # Ensure progression of difficulty
+            if i > len(topics) // 2:
+                current_difficulty = "intermediate"
+            if i > len(topics) * 0.8:
+                current_difficulty = "advanced"
+            
+            # Add cross-references and connections
+            if i > 0:
+                topic['prerequisites'] = [topics[i-1]['title']]
+            
+            # Enhance content with section transitions
+            if i < len(topics) - 1:
+                topic['next_steps'] = [topics[i+1]['title']]
+            
+            topic['difficulty'] = current_difficulty
+            processed_topics.append(topic)
+        
+        return processed_topics
 
     def teach_topic(self, topic: Dict, user_progress: Dict) -> str:
-        """Generate engaging, interactive lesson content"""
+        """Generate comprehensive lesson content"""
         try:
             prompt = f"""
-            Create an engaging lesson for topic: {topic['title']}
+            Create an engaging, detailed lesson for topic: {topic['title']}
 
             Learning objectives:
             {json.dumps(topic.get('learning_objectives', []), indent=2)}
@@ -237,19 +271,28 @@ class EnhancedTeacher:
             Key points:
             {json.dumps(topic.get('key_points', []), indent=2)}
 
+            Content to cover:
+            {topic.get('content', '')}
+
             Student context:
             - Current level: {user_progress.get('understanding_level', 'beginner')}
             - Previous topics completed: {len(user_progress.get('completed_topics', []))}
 
-            Create an interactive lesson that:
-            1. Starts with a hook or engaging question
-            2. Explains concepts clearly with examples
-            3. Includes practical exercises
-            4. Provides knowledge check points
-            5. Connects to real-world applications
-            6. Ends with a summary and next steps
+            Create a comprehensive lesson that:
+            1. Opens with an engaging hook or scenario
+            2. Clearly explains all concepts with multiple examples
+            3. Includes practical exercises for hands-on learning
+            4. Provides frequent knowledge check points
+            5. Connects concepts to real-world applications
+            6. Includes relevant diagrams or visual explanations
+            7. Ends with a thorough summary and next steps
 
-            Format your response in markdown with clear sections and engaging emoji.
+            Format the response in markdown with:
+            - Clear section headers
+            - Bullet points for key ideas
+            - Code blocks for examples
+            - Callouts for important points
+            - Engaging emoji for visual interest
             """
 
             response = self.model.generate_content(prompt)
