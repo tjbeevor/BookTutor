@@ -211,32 +211,32 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
         response = model.generate_content(prompt)
         content = json.loads(clean_json_string(response.text))
         
-        # Format the content with improved styling
+        # Format the content without code blocks
         formatted_content = f"""
-        # {topic.title} 📚
+# {topic.title} 📚
 
-        ## Overview 📋
-        {content.get('overview', 'Introduction to the topic.')}
+## Overview 📋
+{content.get('overview', 'Introduction to the topic.')}
 
-        ## Key Points 🎯
-        {"".join(f"• {point}\n" for point in content.get('key_points', []))}
+## Key Points 🎯
+{"".join(f"• {point}\n" for point in content.get('key_points', []))}
 
-        ## Detailed Explanation 📝
-        {content.get('detailed_explanation', '')}
+## Detailed Explanation 📝
+{content.get('detailed_explanation', '')}
 
-        ## Real-World Example 💡
-        > **Scenario:**  
-        > {content.get('example_scenario', {}).get('situation', '')}
-        
-        > **Application:**  
-        > {content.get('example_scenario', {}).get('application', '')}
-        
-        > **Outcome:**  
-        > {content.get('example_scenario', {}).get('outcome', '')}
+## Real-World Example 💡
+> **Scenario**  
+> {content.get('example_scenario', {}).get('situation', '')}
 
-        ## Practice Question ✍️
-        {content.get('practice_question', '')}
-        """
+> **Application**  
+> {content.get('example_scenario', {}).get('application', '')}
+
+> **Outcome**  
+> {content.get('example_scenario', {}).get('outcome', '')}
+
+## Practice Question ✍️
+{content.get('practice_question', '')}
+"""
         
         return {
             "content": formatted_content,
