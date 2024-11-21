@@ -292,44 +292,40 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     """
-    Generate cohesive, well-structured teaching content with proper formatting and flow.
+    Generate cohesive, well-structured teaching content with proper formatting.
     """
     try:
         prompt = f"""
-        Create a comprehensive, well-structured lesson about: {topic.title}
+        Create a comprehensive lesson about: {topic.title}
         
         Main content to cover: {topic.content}
         
-        Follow these specific guidelines:
-        
-        1. EXPLANATION section should:
-           - Start with a clear introduction of the main concept
-           - Break down the topic into clear, logical subsections
-           - Use proper HTML formatting (h4 for subsections, p for paragraphs)
-           - Present information in a hierarchical, easy-to-follow structure
-           - Include detailed explanations of each key concept
-           - Use <strong> tags for important terms
-        
-        2. EXAMPLES section should:
-           - Provide 2-3 detailed, practical examples
-           - Include step-by-step explanations
-           - Use proper HTML formatting
-           - Reference specific concepts from the explanation
-        
-        3. UNDERSTANDING CHECK should:
-           - Ask a specific question about the content covered
-           - Reference both concepts and examples
-           - Encourage analytical thinking
-        
-        4. KEY POINTS should:
-           - List 3-4 main takeaways from the lesson
-        
-        Return your evaluation as JSON:
+        Structure the content as follows:
+
+        1. Main Content:
+           - Clear introduction
+           - Key concepts with detailed explanations
+           - Important points in bold
+           - Use clear headings for subsections
+           - Use numbered lists where appropriate
+
+        2. Examples:
+           - 2-3 practical, real-world examples
+           - Step-by-step instructions
+           - Clear scenarios
+           - Specific applications of the concepts
+
+        3. Understanding Check:
+           - One clear, specific question
+           - Should test understanding of both concepts and applications
+           - Should require analytical thinking
+
+        Format as JSON with markdown for formatting:
         {{
-            "explanation": "HTML-formatted explanation",
-            "examples": "HTML-formatted examples",
-            "question": "Clear, specific question",
-            "key_points": ["point 1", "point 2", "point 3"]
+            "explanation": "Main content with markdown formatting",
+            "examples": "Examples with markdown formatting",
+            "question": "Understanding check question",
+            "key_points": ["key point 1", "key point 2", "key point 3"]
         }}
         """
         
@@ -340,38 +336,8 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
                 response_text = clean_json_string(response.text)
                 lesson_content = json.loads(response_text)
                 
-                # Format the lesson content with proper HTML structure
-                formatted_explanation = f"""
-                    <div class='explanation-content'>
-                        {lesson_content["explanation"]}
-                    </div>
-                """
-                
-                formatted_examples = f"""
-                    <div class='examples-content'>
-                        {lesson_content["examples"]}
-                    </div>
-                """
-                
-                formatted_question = f"""
-                    <div class='question-content'>
-                        <p>{lesson_content["question"]}</p>
-                    </div>
-                """
-                
-                # Update the lesson content with formatted HTML
-                lesson_content["explanation"] = formatted_explanation
-                lesson_content["examples"] = formatted_examples
-                lesson_content["question"] = formatted_question
-                
-                # Validate content
-                if len(lesson_content["explanation"]) < 200:
-                    raise ValueError("Explanation too brief")
-                if len(lesson_content["examples"]) < 100:
-                    raise ValueError("Examples too brief")
-                if len(lesson_content["question"]) < 50:
-                    raise ValueError("Question too brief")
-                
+                # We'll handle the HTML structure in the main display, 
+                # just return the raw content
                 return lesson_content
                 
             except Exception as e:
@@ -382,9 +348,9 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     except Exception as e:
         st.error(f"Error generating teaching content: {str(e)}")
         return {
-            "explanation": "<div class='explanation-content'>Content generation failed.</div>",
-            "examples": "<div class='examples-content'>Examples not available.</div>",
-            "question": "<div class='question-content'><p>Please try again.</p></div>",
+            "explanation": "Content generation failed.",
+            "examples": "Examples not available.",
+            "question": "Please try again.",
             "key_points": ["Error generating content"]
         }
 def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
@@ -703,6 +669,74 @@ def main():
             color: #1B5E20;
             font-size: 1.2rem;
         }
+
+        .topic-title {
+            font-size: 2rem;
+            color: #2C3E50;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .section-header {
+            font-size: 1.5rem;
+            color: #34495E;
+            margin: 2rem 0 1rem 0;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .content-body {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #2C3E50;
+            padding: 1rem;
+        }
+        
+        .content-body h4 {
+            font-size: 1.3rem;
+            color: #2C3E50;
+            margin: 1.5rem 0 1rem 0;
+        }
+        
+        .content-body p {
+            margin: 1rem 0;
+        }
+        
+        .content-body ul, .content-body ol {
+            margin: 1rem 0 1rem 2rem;
+            padding-left: 1rem;
+        }
+        
+        .content-body li {
+            margin: 0.5rem 0;
+        }
+        
+        .concept-section, .example-section, .question-section {
+            background-color: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .concept-section {
+            border-left: 5px solid #4CAF50;
+        }
+        
+        .example-section {
+            border-left: 5px solid #2196F3;
+        }
+        
+        .question-section {
+            border-left: 5px solid #FF9800;
+        }
+        
+        .content-body strong {
+            color: #1a237e;
+            font-weight: 600;
+        }
+        
         </style>
     """, unsafe_allow_html=True)
 
@@ -818,22 +852,31 @@ def main():
                     )
                     
                     lesson_content = f"""
-                    <div class="lesson-content">
-                        <h2>{current_topic.title}</h2>
-                        <div class="concept-section">
-                            <h3>📚 Understanding the Concepts</h3>
+                <div class="lesson-content">
+                    <h2 class="topic-title">{current_topic.title}</h2>
+                            
+                    <div class="concept-section">
+                        <h3 class="section-header">📚 Understanding the Concepts</h3>
+                        <div class="content-body">
                             {teaching_content["explanation"]}
                         </div>
-                        <div class="examples-section">
-                            <h3>🔍 Practical Examples</h3>
+                    </div>
+                            
+                    <div class="example-section">
+                        <h3 class="section-header">🔍 Practical Examples</h3>
+                        <div class="content-body">
                             {teaching_content["examples"]}
                         </div>
-                        <div class="question-section">
-                            <h3>💡 Understanding Check</h3>
+                    </div>
+                            
+                    <div class="question-section">
+                        <h3 class="section-header">💡 Understanding Check</h3>
+                        <div class="content-body">
                             {teaching_content["question"]}
                         </div>
                     </div>
-                    """
+                </div>
+                """
                     
                     with st.chat_message("assistant"):
                         st.markdown(lesson_content, unsafe_allow_html=True)
