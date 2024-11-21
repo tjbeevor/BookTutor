@@ -9,7 +9,7 @@ from functools import lru_cache
 
 # Configure page with improved layout
 st.set_page_config(
-    page_title="AI Teaching Assistant",
+    page_title="DocuMentor",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded"
