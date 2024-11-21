@@ -305,37 +305,31 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
         1. EXPLANATION section should:
            - Start with a clear introduction of the main concept
            - Break down the topic into clear, logical subsections
-           - Use proper formatting with headers, bullet points, and paragraphs
+           - Use proper HTML formatting (h4 for subsections, p for paragraphs)
            - Present information in a hierarchical, easy-to-follow structure
            - Include detailed explanations of each key concept
-           - Use bold text for important terms and concepts
+           - Use <strong> tags for important terms
         
         2. EXAMPLES section should:
-           - Directly relate to the concepts explained above
-           - Provide real-world applications of specific concepts covered
-           - Include step-by-step walkthroughs where appropriate
-           - Reference specific parts of the explanation
-           - Show practical implementation of the concepts
-           - Progress from simple to more complex applications
+           - Provide 2-3 detailed, practical examples
+           - Include step-by-step explanations
+           - Use proper HTML formatting
+           - Reference specific concepts from the explanation
         
         3. UNDERSTANDING CHECK should:
-           - Ask a question that tests comprehension of both the explanation and examples
-           - Reference specific concepts covered in the lesson
-           - Require analytical thinking about the material presented
-           - Be specific to the content just covered
-           - Allow students to demonstrate understanding of practical applications
+           - Ask a specific question about the content covered
+           - Reference both concepts and examples
+           - Encourage analytical thinking
         
         4. KEY POINTS should:
-           - Summarize the most important concepts covered
-           - Directly relate to the content presented
-           - Include specific terminology and concepts from the lesson
+           - List 3-4 main takeaways from the lesson
         
-        Format the response as JSON with proper HTML formatting:
+        Return your evaluation as JSON:
         {{
-            "explanation": "<div class='content-section'>[Detailed, well-formatted explanation with proper HTML tags]</div>",
-            "examples": "<div class='example-section'>[2-3 specific, relevant examples with proper formatting]</div>",
-            "question": "[Specific, relevant question about the content covered]",
-            "key_points": ["Specific point 1", "Specific point 2", "Specific point 3"]
+            "explanation": "HTML-formatted explanation",
+            "examples": "HTML-formatted examples",
+            "question": "Clear, specific question",
+            "key_points": ["point 1", "point 2", "point 3"]
         }}
         """
         
@@ -347,26 +341,28 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
                 lesson_content = json.loads(response_text)
                 
                 # Format the lesson content with proper HTML structure
-                explanation = lesson_content["explanation"].replace('\n', '<br>')
-                examples = lesson_content["examples"].replace('\n', '<br>')
-                
-                lesson_content["explanation"] = f"""
-                    <div class='content-section'>
-                        <h3>📚 Main Concepts</h3>
-                        <div class='explanation-content'>
-                            {explanation}
-                        </div>
+                formatted_explanation = f"""
+                    <div class='explanation-content'>
+                        {lesson_content["explanation"]}
                     </div>
                 """
                 
-                lesson_content["examples"] = f"""
-                    <div class='example-section'>
-                        <h3>🔍 Practical Applications</h3>
-                        <div class='examples-content'>
-                            {examples}
-                        </div>
+                formatted_examples = f"""
+                    <div class='examples-content'>
+                        {lesson_content["examples"]}
                     </div>
                 """
+                
+                formatted_question = f"""
+                    <div class='question-content'>
+                        <p>{lesson_content["question"]}</p>
+                    </div>
+                """
+                
+                # Update the lesson content with formatted HTML
+                lesson_content["explanation"] = formatted_explanation
+                lesson_content["examples"] = formatted_examples
+                lesson_content["question"] = formatted_question
                 
                 # Validate content
                 if len(lesson_content["explanation"]) < 200:
@@ -386,10 +382,10 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     except Exception as e:
         st.error(f"Error generating teaching content: {str(e)}")
         return {
-            "explanation": f"<div class='content-section'><h3>📚 Main Concepts</h3>{topic.content}</div>",
-            "examples": "<div class='example-section'><h3>🔍 Practical Applications</h3>Examples to be generated...</div>",
-            "question": "Based on the content covered, explain your understanding of the key concepts.",
-            "key_points": ["Key concept 1", "Key concept 2", "Key concept 3"]
+            "explanation": "<div class='explanation-content'>Content generation failed.</div>",
+            "examples": "<div class='examples-content'>Examples not available.</div>",
+            "question": "<div class='question-content'><p>Please try again.</p></div>",
+            "key_points": ["Error generating content"]
         }
 def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
     """
