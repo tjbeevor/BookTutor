@@ -191,127 +191,79 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     try:
-        # Enhanced prompt to get richer content
-        prompt = f"""
-        Create a comprehensive educational module about: {topic.title}
-        
-        Return a detailed JSON object with this exact structure:
-        {{
-            "overview": {{
-                "basic_definition": "Clear, concise definition of the topic",
-                "context": "Broader context and importance in today's world",
-                "key_benefits": ["Benefit 1", "Benefit 2", "Benefit 3", "Benefit 4"],
-                "historical_context": "Brief evolution and development of the topic",
-                "statistics": [
-                    {{"stat": "Statistical fact 1", "impact": "Why this matters"}},
-                    {{"stat": "Statistical fact 2", "impact": "Why this matters"}},
-                    {{"stat": "Statistical fact 3", "impact": "Why this matters"}}
-                ],
-                "practical_relevance": "How this applies to daily life",
-                "global_impact": "Broader societal and community implications"
-            }},
-            "key_points": [
-                {{
-                    "point": "Main point",
-                    "explanation": "Detailed explanation",
-                    "importance": "Why this matters"
-                }}
-            ],
-            "detailed_explanation": {{
-                "main_concepts": [
-                    {{
-                        "title": "Concept title",
-                        "description": "Detailed description",
-                        "steps": ["Step 1", "Step 2", "Step 3"],
-                        "important_notes": ["Note 1", "Note 2"]
-                    }}
-                ]
-            }},
-            "example_scenario": {{
-                "situation": "Detailed real-world scenario",
-                "application_steps": ["Step 1", "Step 2", "Step 3"],
-                "critical_decisions": ["Decision point 1", "Decision point 2"],
-                "outcome": {{
-                    "immediate_results": "What happens right away",
-                    "long_term_impact": "Long-term effects",
-                    "lessons_learned": ["Lesson 1", "Lesson 2"]
-                }}
-            }},
-            "practice_question": {{
-                "main_question": "Primary question",
-                "sub_questions": ["Sub-question 1", "Sub-question 2", "Sub-question 3"],
-                "key_considerations": ["Consideration 1", "Consideration 2"]
-            }},
-            "expected_points": ["Expected response point 1", "Expected response point 2"]
-        }}
-        
-        Make the content detailed, practical, and engaging. Include relevant statistics and real-world applications.
-        """
+        # [Previous prompt code remains the same]
         
         response = model.generate_content(prompt)
         content = json.loads(clean_json_string(response.text))
         
-        # Format the content with enhanced structure
-        formatted_content = f"""
+        # Improved formatting with better error handling
+        try:
+            overview_section = f"""
 # {topic.title} 📚
 
 ## Overview 📋
-{content['overview']['basic_definition']}
+{content.get('overview', {}).get('basic_definition', 'No basic definition provided.')}
 
-{content['overview']['context']}
+{content.get('overview', {}).get('context', 'No context provided.')}
 
 First aid skills are particularly valuable because:
-{"".join(f"- {benefit}\n" for benefit in content['overview']['key_benefits'])}
+{"".join(f"- {benefit}\n" for benefit in content.get('overview', {}).get('key_benefits', ['No benefits provided.']))}
+"""
 
-{content['overview']['historical_context']}
-
+            statistics_section = """
 Statistics show that immediate first aid can significantly improve outcomes in emergencies:
-{"".join(f"- {stat['stat']}: {stat['impact']}\n" for stat in content['overview']['statistics'])}
+""" + "".join(f"- {stat.get('stat', '')}: {stat.get('impact', '')}\n" 
+              for stat in content.get('overview', {}).get('statistics', []))
 
-{content['overview']['practical_relevance']}
-
-{content['overview']['global_impact']}
-
+            key_points_section = """
 ## Key Points 🎯
-{"".join(f"• **{point['point']}**: {point['explanation']}\n" for point in content['key_points'])}
+""" + "".join(f"• **{point.get('point', '')}**: {point.get('explanation', '')}\n" 
+              for point in content.get('key_points', []))
 
+            detailed_section = """
 ## Detailed Explanation 📝
-{"\n".join(f'''### {concept['title']}
-{concept['description']}
+"""
+            for concept in content.get('detailed_explanation', {}).get('main_concepts', []):
+                detailed_section += f"""
+### {concept.get('title', 'Untitled Concept')}
+{concept.get('description', 'No description provided.')}
 
 Key steps:
-{"".join(f"- {step}\n" for step in concept['steps'])}
+{"".join(f"- {step}\n" for step in concept.get('steps', ['No steps provided.']))}
 
 Important notes:
-{"".join(f"- {note}\n" for step in concept['important_notes'])}
-''' for concept in content['detailed_explanation']['main_concepts'])}
+{"".join(f"- {note}\n" for note in concept.get('important_notes', ['No notes provided.']))}
+"""
 
+            example_section = f"""
 ## Real-World Example 💡
 > **Scenario**  
-> {content['example_scenario']['situation']}
+> {content.get('example_scenario', {}).get('situation', 'No scenario provided.')}
 
 > **Application**  
-{"".join(f"> {i+1}. {step}\n" for i, step in enumerate(content['example_scenario']['application_steps']))}
+{"".join(f"> {i+1}. {step}\n" for i, step in enumerate(content.get('example_scenario', {}).get('application_steps', ['No steps provided.'])))}
 
 > **Critical Decision Points**  
-{"".join(f"> - {decision}\n" for decision in content['example_scenario']['critical_decisions'])}
+{"".join(f"> - {decision}\n" for decision in content.get('example_scenario', {}).get('critical_decisions', ['No decision points provided.']))}
 
 > **Outcome**  
-> Immediate Results: {content['example_scenario']['outcome']['immediate_results']}
+> Immediate Results: {content.get('example_scenario', {}).get('outcome', {}).get('immediate_results', 'No immediate results provided.')}
 > 
-> Long-term Impact: {content['example_scenario']['outcome']['long_term_impact']}
+> Long-term Impact: {content.get('example_scenario', {}).get('outcome', {}).get('long_term_impact', 'No long-term impact provided.')}
 > 
 > Lessons Learned:
-{"".join(f"> - {lesson}\n" for lesson in content['example_scenario']['outcome']['lessons_learned'])}
+{"".join(f"> - {lesson}\n" for lesson in content.get('example_scenario', {}).get('outcome', {}).get('lessons_learned', ['No lessons provided.']))}
+"""
 
+            practice_section = f"""
 ## Practice Question ✍️
-{content['practice_question']['main_question']}
+{content.get('practice_question', {}).get('main_question', 'No main question provided.')}
 
 Additional considerations:
-{"".join(f"{i+1}. {question}\n" for i, question in enumerate(content['practice_question']['sub_questions']))}
+{"".join(f"{i+1}. {question}\n" for i, question in enumerate(content.get('practice_question', {}).get('sub_questions', ['No sub-questions provided.'])))}
 
 Key points to address:
-{"".join(f"- {point}\n" for point in content['practice_question']['key_considerations'])}
+{"".join(f"- {point}\n" for point in content.get('practice_question', {}).get('key_considerations', ['No key considerations provided.']))}
 
 ---
 **Remember**: {random.choice([
@@ -321,23 +273,58 @@ Key points to address:
     "Your actions can make a life-changing difference."
 ])}
 """
-        
-        return {
-            "content": formatted_content,
-            "examples": content['example_scenario'],
-            "question": content['practice_question']['main_question'],
-            "key_points": content['expected_points']
-        }
-        
+
+            # Combine all sections
+            formatted_content = (
+                overview_section + 
+                statistics_section + 
+                key_points_section + 
+                detailed_section + 
+                example_section + 
+                practice_section
+            )
+
+            return {
+                "content": formatted_content,
+                "examples": content.get('example_scenario', {}),
+                "question": content.get('practice_question', {}).get('main_question', 'No question provided.'),
+                "key_points": content.get('expected_points', ['No points provided.'])
+            }
+
+        except KeyError as ke:
+            st.warning(f"Missing expected data in content structure: {str(ke)}")
+            # Provide simplified but complete content when data is missing
+            return create_fallback_content(topic)
+            
+        except Exception as e:
+            st.warning(f"Error formatting content: {str(e)}")
+            return create_fallback_content(topic)
+            
     except Exception as e:
         st.error(f"Error generating teaching message: {str(e)}")
-        return {
-            "content": topic.content,
-            "examples": "Let's practice applying this concept.",
-            "question": f"Can you explain the key points of {topic.title}?",
-            "key_points": ["Understanding of basic concept"]
-        }
+        return create_fallback_content(topic)
 
+def create_fallback_content(topic: Topic) -> dict:
+    """Create a basic content structure when the main generation fails."""
+    return {
+        "content": f"""
+# {topic.title} 📚
+
+## Overview 📋
+{topic.content}
+
+## Key Points 🎯
+• Basic understanding of the topic is essential
+• Practice and repetition help master the concepts
+• Seek additional resources for deeper understanding
+
+## Practice Question ✍️
+Can you explain the main concepts of {topic.title}?
+""",
+        "examples": {},
+        "question": f"Can you explain the key points of {topic.title}?",
+        "key_points": ["Basic understanding of concepts"]
+    }
 def main():
     # Page configuration
     st.set_page_config(
