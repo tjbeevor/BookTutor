@@ -1,7 +1,7 @@
 import streamlit as st
 from typing import Dict, List, Any
 import json
-from openai import OpenAI
+import google.generativeai as genai
 import PyPDF2
 import docx
 import io
@@ -34,7 +34,7 @@ def process_uploaded_file(uploaded_file) -> Dict:
         else:
             raise ValueError(f"Unsupported file type: {uploaded_file.type}")
             
-        # Basic section detection (you can enhance this)
+        # Basic section detection
         paragraphs = content["text"].split("\n\n")
         current_section = {"title": "Introduction", "content": []}
         
@@ -88,16 +88,13 @@ class DynamicTeacher:
                     }}
                 ]
             }}
+
+            Respond ONLY with the JSON, no other text.
             """
 
-            # Get structure from OpenAI
-            response = self.model.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
-            )
-            
-            structure = json.loads(response.choices[0].message.content)
+            # Get structure from Gemini
+            response = self.model.generate_content(prompt)
+            structure = json.loads(clean_json_string(response.text))
             return structure['topics']
 
         except Exception as e:
@@ -135,11 +132,8 @@ class DynamicTeacher:
             """
 
             # Generate teaching content
-            response = self.model.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return response.choices[0].message.content
+            response = self.model.generate_content(prompt)
+            return response.text
 
         except Exception as e:
             st.error(f"Error generating lesson: {str(e)}")
@@ -164,15 +158,13 @@ class DynamicTeacher:
                 "areas_to_review": ["area1", "area2"],
                 "next_steps": "Recommendation for what to do next"
             }}
+
+            Respond ONLY with the JSON, no other text.
             """
 
             # Get evaluation
-            response = self.model.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
-            )
-            return json.loads(response.choices[0].message.content)
+            response = self.model.generate_content(prompt)
+            return json.loads(clean_json_string(response.text))
 
         except Exception as e:
             st.error(f"Error evaluating response: {str(e)}")
@@ -184,26 +176,30 @@ class DynamicTeacher:
             }
 
 def initialize_model():
-    """Initialize or get the AI model"""
+    """Initialize or get the Gemini model"""
     try:
         # Check if API key is in session state
-        if 'openai_api_key' not in st.session_state:
-            st.session_state.openai_api_key = st.secrets.get('OPENAI_API_KEY', '')
+        if 'gemini_api_key' not in st.session_state:
+            st.session_state.gemini_api_key = st.secrets.get('GOOGLE_API_KEY', '')
         
-        if not st.session_state.openai_api_key:
-            st.session_state.openai_api_key = st.text_input(
-                'Enter OpenAI API Key:', 
+        if not st.session_state.gemini_api_key:
+            st.session_state.gemini_api_key = st.text_input(
+                'Enter Google API Key:', 
                 type='password'
             )
-            if not st.session_state.openai_api_key:
-                st.warning('Please enter your OpenAI API key to continue.')
+            if not st.session_state.gemini_api_key:
+                st.warning('Please enter your Google API key to continue.')
                 st.stop()
         
-        # Initialize the model
-        return OpenAI(api_key=st.session_state.openai_api_key)
+        # Configure the Gemini API
+        genai.configure(api_key=st.session_state.gemini_api_key)
+        
+        # Initialize the model - using the most capable model
+        model = genai.GenerativeModel('gemini-pro')
+        return model
     
     except Exception as e:
-        st.error(f"Error initializing AI model: {str(e)}")
+        st.error(f"Error initializing Gemini model: {str(e)}")
         st.stop()
 
 def main():
