@@ -173,30 +173,30 @@ class EnhancedTeacher:
         except Exception as e:
             st.error(f"Error cleaning JSON text: {str(e)}")
             return json.dumps(self._create_fallback_structure("Content parsing error"))
-    
-        def _split_into_chunks(self, text: str) -> List[str]:
-            """Split content into logical sections"""
-            lines = text.split('\n')
-            sections = []
-            current_section = []
-            
-            for line in lines:
-                if self._is_section_header(line) and current_section:
-                    sections.append('\n'.join(current_section))
-                    current_section = [line]
-                else:
-                    current_section.append(line)
-            
-            if current_section:
+
+    def _split_into_chunks(self, text: str) -> List[str]:
+        """Split content into logical sections"""
+        lines = text.split('\n')
+        sections = []
+        current_section = []
+        
+        for line in lines:
+            if self._is_section_header(line) and current_section:
                 sections.append('\n'.join(current_section))
+                current_section = [line]
+            else:
+                current_section.append(line)
+        
+        if current_section:
+            sections.append('\n'.join(current_section))
+        
+        # If no natural sections found, create chunks of reasonable size
+        if len(sections) <= 1:
+            chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+            # Ensure chunks break at sentence boundaries where possible
+            return self._refine_chunks(chunks)
             
-            # If no natural sections found, create chunks of reasonable size
-            if len(sections) <= 1:
-                chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
-                # Ensure chunks break at sentence boundaries where possible
-                return self._refine_chunks(chunks)
-                
-            return sections
+        return sections
 
     def _refine_chunks(self, chunks: List[str]) -> List[str]:
         """Refine chunk boundaries to break at natural points"""
