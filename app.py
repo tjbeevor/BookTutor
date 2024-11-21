@@ -150,35 +150,89 @@ class DynamicTeacher:
             text_content = content['text']
             
             prompt = f"""
-            Analyze this educational content and create a learning structure.
-            Content: {text_content[:2000]}...
+            You are a helpful teaching assistant. Your task is to analyze the following educational content and create a learning structure.
+            
+            Content to analyze:
+            {text_content[:2000]}...
 
-            Create a structured learning path that:
-            1. Identifies main topics to be taught
-            2. Sequences them logically
-            3. Identifies key points for each topic
-
-            Return the structure as JSON with this format:
+            Instructions:
+            Create a learning structure with clear topics and key points. You must respond with ONLY a JSON object in the following format:
             {{
                 "topics": [
                     {{
                         "title": "Topic title",
                         "key_points": ["point 1", "point 2"],
                         "content": "Relevant content from the document",
-                        "teaching_style": "conceptual|technical|practical",
-                        "difficulty": "beginner|intermediate|advanced"
+                        "teaching_style": "conceptual",
+                        "difficulty": "beginner"
                     }}
                 ]
             }}
+
+            Remember:
+            1. Response must be valid JSON
+            2. Do not include any other text or explanations
+            3. Only include the JSON structure
+            4. Ensure all JSON keys and values are properly quoted
             """
 
-            response = self.model.generate_content(prompt)
-            structure = json.loads(response.text)
-            return structure['topics']
+            # Get response from model
+            response = self.model.generate_content(prompt, generation_config={
+                'temperature': 0.3,
+                'top_p': 0.8,
+                'top_k': 40
+            })
+
+            # Clean and parse the response
+            response_text = response.text.strip()
+            
+            # Debug logging
+            st.write("Raw response:", response_text)  # We'll remove this after confirming it works
+            
+            # Try to find JSON in the response
+            try:
+                # Find the first { and last }
+                start = response_text.find('{')
+                end = response_text.rfind('}') + 1
+                if start != -1 and end != 0:
+                    json_str = response_text[start:end]
+                    structure = json.loads(json_str)
+                    
+                    # Validate structure
+                    if 'topics' not in structure:
+                        structure = {'topics': []}
+                    
+                    # Ensure each topic has required fields
+                    for topic in structure['topics']:
+                        topic.setdefault('key_points', [])
+                        topic.setdefault('content', '')
+                        topic.setdefault('teaching_style', 'conceptual')
+                        topic.setdefault('difficulty', 'beginner')
+                    
+                    return structure['topics']
+                else:
+                    raise ValueError("No JSON object found in response")
+                    
+            except json.JSONDecodeError as e:
+                st.error(f"JSON parsing error: {str(e)}")
+                # Attempt to create a basic structure from the response
+                return [{
+                    'title': 'Document Overview',
+                    'key_points': ['Key points from the document'],
+                    'content': text_content[:1000],
+                    'teaching_style': 'conceptual',
+                    'difficulty': 'beginner'
+                }]
 
         except Exception as e:
             st.error(f"Error analyzing document: {str(e)}")
-            return []
+            return [{
+                'title': 'Document Overview',
+                'key_points': ['Document analysis needs review'],
+                'content': text_content[:1000] if text_content else 'Content unavailable',
+                'teaching_style': 'conceptual',
+                'difficulty': 'beginner'
+            }]
 
     def teach_topic(self, topic: Dict, user_progress: Dict) -> str:
         """Dynamically generate teaching content"""
