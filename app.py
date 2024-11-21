@@ -146,7 +146,7 @@ def clean_json_string(json_str: str) -> str:
 
 def generate_tutorial_structure(content: str, model) -> List[Topic]:
     """
-    Generate a structured tutorial breakdown with simplified JSON but maintaining logic.
+    Generate a structured tutorial breakdown with safe quote handling.
     """
     def chunk_content(text: str, max_chunk_size: int = 3000) -> List[str]:
         paragraphs = text.split('\n\n')
@@ -169,7 +169,7 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
         return chunks
 
     def safe_json_loads(json_str: str, context: str = "") -> dict:
-        """Safely parse JSON with enhanced error handling"""
+        """Safely parse JSON with enhanced quote handling"""
         try:
             # Remove any markdown formatting and find JSON
             clean_str = json_str.replace("```json", "").replace("```", "")
@@ -182,24 +182,53 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
                 
             json_str = clean_str[start_idx:end_idx]
             
-            # Aggressive cleaning
-            json_str = ' '.join(json_str.split())  # Normalize whitespace
-            json_str = json_str.replace("'", '"')  # Replace single quotes
-            json_str = json_str.replace(',}', '}')  # Remove trailing commas
-            json_str = json_str.replace(',]', ']')
+            # Handle nested quotes
+            json_str = json_str.replace('\n', '\\n')  # Escape newlines
+            json_str = json_str.replace('"s', "'s")  # Replace possessive quotes
+            json_str = json_str.replace('\"', '"')   # Handle escaped quotes
+            
+            # Normalize quotes
+            in_string = False
+            result = []
+            for char in json_str:
+                if char == '"':
+                    in_string = not in_string
+                if char == "'" and not in_string:
+                    char = '"'
+                result.append(char)
+            json_str = ''.join(result)
             
             return json.loads(json_str)
             
         except Exception as e:
-            st.warning(f"JSON parsing error in {context}: {str(e)}\nAttempting to parse: {json_str}")
+            st.warning(f"JSON parsing error in {context}: {str(e)}")
+            # Try alternate parsing approach
+            try:
+                import re
+                # Extract lessons array using regex
+                lessons_match = re.search(r'"lessons"\s*:\s*(\[.*?\])', json_str, re.DOTALL)
+                if lessons_match:
+                    lessons_str = lessons_match.group(1)
+                    # Parse individual lessons
+                    lessons = []
+                    lesson_matches = re.finditer(r'{[^{}]*}', lessons_str)
+                    for match in lesson_matches:
+                        try:
+                            lesson_json = "{" + match.group(0).strip('{}') + "}"
+                            lesson = json.loads(lesson_json)
+                            lessons.append(lesson)
+                        except:
+                            continue
+                    return {"subject": "", "lessons": lessons}
+            except:
+                pass
             return {"subject": "", "lessons": []}
 
     try:
-        # Initial analysis with extremely simplified JSON
+        # Initial analysis with simplified prompt
         analysis_prompt = """
-        Analyze this educational content and break it down into small, focused lessons.
-        
-        Return the structure in this exact format (nothing else):
+        Analyze this content and create micro-lessons.
+        Return only this exact format:
         {
           "subject": "main subject",
           "lessons": [
@@ -210,6 +239,9 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
             }
           ]
         }
+        
+        Use only straight quotes (") not curly quotes.
+        Do not use quotes within text content.
         """
         
         response = model.generate_content(analysis_prompt + "\n\nContent:\n" + content[:3000])
@@ -229,7 +261,11 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
             Create focused micro-lessons for this {main_subject} content.
             Each lesson must cover exactly ONE specific concept.
             
-            Return only this exact JSON format:
+            Use only straight quotes (") not curly quotes.
+            Do not use quotes within text content.
+            Use simple punctuation.
+            
+            Return only this exact format:
             {{
               "lessons": [
                 {{
@@ -282,15 +318,11 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
         # Sort topics based on sequence and prerequisites
         def get_topic_score(topic: dict) -> tuple:
-            # Get sequence position
             sequence_pos = next((i for i, seq in enumerate(lesson_sequence) 
                                if similar_titles(topic.get('title', ''), seq)), len(lesson_sequence))
-            
-            # Calculate prerequisite depth
             prereq_count = len(topic.get('prereqs', []))
             level_score = {'beginner': 0, 'intermediate': 1, 'advanced': 2}
             level = level_score.get(topic.get('level', 'beginner'), 0)
-            
             return (sequence_pos, prereq_count, level)
 
         all_topics.sort(key=get_topic_score)
