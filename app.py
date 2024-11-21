@@ -821,6 +821,7 @@ class TutorialManager:
     def __init__(self, model):
         self.content_analyzer = ContentAnalyzer(model)
         self.tutorial_generator = AdaptiveTutorialGenerator()
+        self.evaluation_engine = EvaluationEngine(model)
         self.current_performance: float = 50.0
         self.approach_history: List[str] = []
         
@@ -834,6 +835,23 @@ class TutorialManager:
             topic, 
             self.current_performance
         )
+        
+    def evaluate_response(self, user_response: str, topic: Topic) -> Dict[str, Any]:
+        """Evaluate user response and provide feedback"""
+        # Get expected points from topic metadata
+        expected_points = topic.metadata.get('key_points', []) if topic.metadata else []
+        
+        # Use evaluation engine to evaluate response
+        evaluation_result = self.evaluation_engine.evaluate_response(
+            user_response,
+            expected_points,
+            topic
+        )
+        
+        # Update current performance
+        self.current_performance = evaluation_result.get('understanding_level', self.current_performance)
+        
+        return evaluation_result
         
     def update_performance(self, evaluation_result: Dict[str, Any]) -> None:
         """Update user performance metrics"""
