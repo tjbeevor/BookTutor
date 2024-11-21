@@ -255,13 +255,11 @@ class DynamicTeacher:
             1. Introduces the topic clearly
             2. Explains concepts with examples
             3. Uses analogies when helpful
-            4. Includes practice questions
-            5. Checks for understanding
+            4. Provides clear explanations of key points
 
             Format your response as a clear lesson with markdown formatting.
             Include emoji for visual engagement 📚
             Make it conversational and encouraging 🎯
-            Include practice questions at the end ✍️
             """
 
             response = self.model.generate_content(prompt)
@@ -270,39 +268,6 @@ class DynamicTeacher:
         except Exception as e:
             st.error(f"Error generating lesson: {str(e)}")
             return "Error generating lesson content."
-
-    def evaluate_response(self, topic: Dict, user_response: str) -> Dict:
-        """Evaluate user's response"""
-        try:
-            prompt = f"""
-            As a teacher, evaluate this student's response to questions about: {topic['title']}
-
-            Key points that should be understood:
-            {json.dumps(topic['key_points'], indent=2)}
-
-            Student's response:
-            {user_response}
-
-            Provide evaluation as JSON:
-            {{
-                "understanding_level": 0-100,
-                "feedback": "Specific, encouraging feedback",
-                "areas_to_review": ["area1", "area2"],
-                "next_steps": "Recommendation for what to do next"
-            }}
-            """
-
-            response = self.model.generate_content(prompt)
-            return json.loads(response.text)
-
-        except Exception as e:
-            st.error(f"Error evaluating response: {str(e)}")
-            return {
-                "understanding_level": 50,
-                "feedback": "Unable to evaluate response.",
-                "areas_to_review": [],
-                "next_steps": "Please try again."
-            }
 
 def main():
     # Initialize session state
@@ -393,52 +358,21 @@ def main():
         # Display teaching content
         st.markdown(teaching_content)
         
-        # Practice section
-        st.markdown("### ✍️ Practice Time")
-        user_response = st.text_area(
-            "Your response to the practice questions:",
-            height=150
-        )
+        # Navigation buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.session_state.current_topic > 0:
+                if st.button("⬅️ Previous Topic"):
+                    st.session_state.current_topic -= 1
+                    st.rerun()
         
-        if user_response:
-            with st.spinner("Evaluating your response..."):
-                evaluation = teacher.evaluate_response(current_topic, user_response)
-            
-            # Show feedback
-            st.markdown(f"""
-            <div class="feedback-box">
-                <h3>Feedback</h3>
-                <p>{evaluation['feedback']}</p>
-                <div style="margin-top: 1rem;">
-                    <div style="background-color: #e9ecef; height: 8px; border-radius: 4px;">
-                        <div style="background-color: {'#2ECC71' if evaluation['understanding_level'] >= 70 else '#4A90E2'}; 
-                             width: {evaluation['understanding_level']}%; 
-                             height: 100%; 
-                             border-radius: 4px;">
-                        </div>
-                    </div>
-                    <p style="text-align: right; color: #666; margin-top: 0.25rem;">
-                        Understanding Level: {evaluation['understanding_level']}%
-                    </p>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if evaluation['areas_to_review']:
-                st.markdown("### Areas to Review")
-                for area in evaluation['areas_to_review']:
-                    st.markdown(f"- {area}")
-            
-            # Update progress if understanding is good
-            if evaluation['understanding_level'] >= 70:
-                st.success("✨ Great understanding! Ready to move on!")
-                if st.session_state.current_topic < len(st.session_state.topics) - 1:
-                    if st.button("Next Topic ➡️"):
-                        st.session_state.current_topic += 1
-                        st.rerun()
-                else:
-                    st.balloons()
-                    st.success("🎉 Congratulations! You've completed all topics!")
+        with col2:
+            if st.session_state.current_topic < len(st.session_state.topics) - 1:
+                if st.button("Next Topic ➡️"):
+                    st.session_state.current_topic += 1
+                    st.rerun()
+            elif st.session_state.current_topic == len(st.session_state.topics) - 1:
+                st.success("🎉 You've reached the end of the content!")
 
 if __name__ == "__main__":
     main()
