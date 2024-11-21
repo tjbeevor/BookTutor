@@ -471,7 +471,7 @@ def main():
     if not st.session_state.topics:
         st.markdown("""
         <div class="welcome-screen">
-            <h1>📚 Welcome to AI Teaching Assistant</h1>
+            <h1>📚 Welcome to DocuMentor</h1>
             <p style="font-size: 1.2rem; color: #666; margin: 1rem 0;">
                 Transform your documents into interactive learning experiences.
             </p>
