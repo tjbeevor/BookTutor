@@ -292,118 +292,82 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     """
-    Generate cohesive, well-structured teaching content with enhanced formatting.
+    Generate teaching content while preserving existing logic and improving formatting.
     """
+    # Keep existing conversation history logic
     previous_topics = []
     for msg in conversation_history:
         if msg["role"] == "assistant" and "<h2>" in msg["content"]:
             topic_title = msg["content"].split("<h2>")[1].split("</h2>")[0]
             previous_topics.append(topic_title)
 
+    # Keep the existing prompt but add formatting guidance
     prompt = f"""
-    Create a comprehensive lesson about: {topic.title}
+    Create a comprehensive, well-structured lesson about: {topic.title}
     
     Context:
     - Main topic content: {topic.content}
     - Teaching phase: {phase}
     - Previously covered topics: {', '.join(previous_topics) if previous_topics else 'This is the first topic'}
     
-    Format the response using this exact structure:
+    Format the response carefully with appropriate markdown:
+    1. Use proper headers with ## for main title, ### for sections
+    2. Use bullet points with * for lists
+    3. Number steps in examples
+    4. Leave appropriate spacing between sections
+    
+    Return the lesson as JSON in this format:
     {{
-        "introduction": "A clear 2-3 sentence introduction to the topic",
-        "key_concepts": [
-            {{
-                "title": "Concept Title",
-                "explanation": "Clear explanation",
-                "bullet_points": [
-                    "Key point 1",
-                    "Key point 2"
-                ]
-            }}
-        ],
-        "examples": [
-            {{
-                "title": "Example Title",
-                "scenario": "Detailed example scenario",
-                "steps": [
-                    "Step 1",
-                    "Step 2"
-                ]
-            }}
-        ],
-        "practice_question": "A thought-provoking question about the content",
-        "key_takeaways": [
-            "Key takeaway 1",
-            "Key takeaway 2"
-        ]
+        "explanation": "Detailed markdown-formatted explanation",
+        "examples": "2-3 specific, relevant examples with clear steps",
+        "question": "Specific question about the content covered",
+        "key_points": ["3-4 specific key points from this lesson"]
     }}
     
-    Make the content practical and easy to understand.
+    Ensure all content is properly formatted with clear headings and spacing.
     """
     
+    # Keep existing retry logic and error handling
     max_retries = 3
     for attempt in range(max_retries):
         try:
             response = model.generate_content(prompt)
             response_text = clean_json_string(response.text)
-            content = json.loads(response_text)
+            lesson_content = json.loads(response_text)
             
-            # Format the content with clean markdown
+            # Format the content with proper spacing and structure
             formatted_content = f"""
 ## {topic.title}
 
 ### 📚 Understanding the Concepts
 
-{content['introduction']}
+{lesson_content["explanation"]}
 
-"""
-            # Add key concepts
-            for concept in content['key_concepts']:
-                formatted_content += f"""
-#### {concept['title']}
-{concept['explanation']}
+### 🔍 Practical Applications
 
-"""
-                if concept['bullet_points']:
-                    for point in concept['bullet_points']:
-                        formatted_content += f"* {point}\n"
-                formatted_content += "\n"
+{lesson_content["examples"]}
 
-            # Add practical applications
-            formatted_content += "\n### 🔍 Practical Applications\n"
-            for i, example in enumerate(content['examples'], 1):
-                formatted_content += f"""
-#### Example {i}: {example['title']}
-{example['scenario']}
-
-Steps:
-"""
-                for step in example['steps']:
-                    formatted_content += f"* {step}\n"
-                formatted_content += "\n"
-
-            # Add understanding check
-            formatted_content += f"""
 ### 💡 Understanding Check
 
-{content['practice_question']}
+{lesson_content["question"]}
 
-Key Takeaways:
+#### Key Points:
 """
-            for takeaway in content['key_takeaways']:
-                formatted_content += f"* {takeaway}\n"
+            # Add key points as bullet points
+            for point in lesson_content["key_points"]:
+                formatted_content += f"* {point}\n"
             
             return {
                 "explanation": formatted_content,
-                "examples": content['examples'],
-                "question": content['practice_question'],
-                "key_points": content['key_takeaways']
+                "examples": lesson_content["examples"],
+                "question": lesson_content["question"],
+                "key_points": lesson_content["key_points"]
             }
             
         except Exception as e:
             if attempt == max_retries - 1:
                 st.error(f"Failed to generate teaching content after {max_retries} attempts: {str(e)}")
-                # Return a basic formatted version if all attempts fail
+                # Keep existing fallback content
                 return {
                     "explanation": f"""
 ## {topic.title}
@@ -414,21 +378,18 @@ Key Takeaways:
 
 ### 🔍 Practical Applications
 
-#### Example 1: Basic Application
-* Start with the fundamentals
-* Apply the concept step by step
-* Practice regularly
+Example 1: Basic application of the concept.
 
 ### 💡 Understanding Check
 
 Please explain your understanding of {topic.title}.
 
-Key Takeaways:
-* Understand the basic principles
-* Practice regularly
-* Apply concepts systematically
+#### Key Points:
+* Understanding core concepts
+* Practical applications
+* Key takeaways
 """,
-                    "examples": [{"title": "Basic Application", "steps": ["Step 1", "Step 2", "Step 3"]}],
+                    "examples": "Example 1: Basic application of the concept.",
                     "question": f"Please explain your understanding of {topic.title}.",
                     "key_points": ["Understanding core concepts", "Practical applications", "Key takeaways"]
                 }
