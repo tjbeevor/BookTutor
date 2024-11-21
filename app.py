@@ -605,21 +605,55 @@ class TutorialTemplate(ABC):
 
 class TechnicalTemplate(TutorialTemplate):
     def create_tutorial_content(self, topic: Topic, user_performance: float) -> Dict[str, Any]:
+        """Template for technical content with code examples and practical exercises"""
         difficulty = self._adjust_difficulty(user_performance)
-        return {
-            "overview": {
-                "title": topic.title,
-                "description": self._generate_description(topic),
-                "prerequisites": self._get_prerequisites(topic),
-                "objectives": self._generate_objectives(topic, difficulty)
-            },
-            "content": {
-                "explanation": self._generate_explanation(topic, difficulty),
-                "code_examples": self._generate_code_examples(topic, difficulty),
-                "practice_exercises": self._generate_exercises(topic, difficulty)
-            },
-            "difficulty": difficulty
+        
+        # Create a more comprehensive content structure
+        content = {
+            "content": f"""
+# {topic.title}
+
+## Overview 📋
+{topic.content}
+
+## Learning Objectives 🎯
+{"".join(f"- {obj}\n" for obj in self._generate_objectives(topic, difficulty))}
+
+## Prerequisites 📚
+{"".join(f"- {prereq}\n" for prereq in self._get_prerequisites(topic))}
+
+## Detailed Explanation 📝
+{self._generate_explanation(topic, difficulty)}
+
+## Code Examples 💻
+""",
+            "code_examples": self._generate_code_examples(topic, difficulty),
+            "practice_exercises": self._generate_exercises(topic, difficulty),
+            "metadata": {
+                "difficulty": difficulty,
+                "topic_type": "technical",
+                "estimated_time": "30 minutes"
+            }
         }
+
+        # Add code examples to content
+        for example in content["code_examples"]:
+            content["content"] += f"""
+### {example['title']}
+```python
+{example['code']}
+```
+"""
+
+        # Add practice exercises to content
+        content["content"] += "\n## Practice Exercises ✍️\n"
+        for exercise in content["practice_exercises"]:
+            content["content"] += f"""
+### {exercise['title']}
+{exercise['description']}
+"""
+
+        return content
 
     def _adjust_difficulty(self, user_performance: float) -> str:
         if user_performance >= 85:
@@ -628,23 +662,153 @@ class TechnicalTemplate(TutorialTemplate):
             return "intermediate"
         return "beginner"
 
-    def _generate_description(self, topic: Topic) -> str:
-        return f"Technical deep-dive into {topic.title}"
-
     def _get_prerequisites(self, topic: Topic) -> List[str]:
-        return ["Basic programming knowledge", "Understanding of data structures"]
+        basic_prereqs = [
+            "Basic programming knowledge",
+            "Understanding of fundamental concepts",
+            "Familiarity with Python syntax"
+        ]
+        
+        # Add topic-specific prerequisites from metadata if available
+        if topic.metadata and 'prerequisites' in topic.metadata:
+            basic_prereqs.extend(topic.metadata['prerequisites'])
+            
+        return basic_prereqs
 
     def _generate_objectives(self, topic: Topic, difficulty: str) -> List[str]:
-        return [f"Master {point}" for point in topic.metadata.get('key_points', [])]
+        key_points = topic.metadata.get('key_points', []) if topic.metadata else []
+        
+        if not key_points:
+            key_points = [f"Understand {topic.title}", "Apply basic concepts", "Practice implementation"]
+            
+        if difficulty == "advanced":
+            return [f"Master {obj}" for obj in key_points]
+        elif difficulty == "intermediate":
+            return [f"Understand and apply {obj}" for obj in key_points]
+        return [f"Learn basic concepts of {obj}" for obj in key_points]
 
     def _generate_explanation(self, topic: Topic, difficulty: str) -> str:
-        return topic.content
+        base_explanation = topic.content
+        
+        if difficulty == "advanced":
+            return f"""
+{base_explanation}
+
+### Advanced Concepts
+- Deep dive into implementation details
+- Best practices and optimization techniques
+- Advanced use cases and scenarios
+"""
+        elif difficulty == "intermediate":
+            return f"""
+{base_explanation}
+
+### Key Concepts
+- Main implementation approaches
+- Common usage patterns
+- Practical applications
+"""
+        else:
+            return f"""
+{base_explanation}
+
+### Basic Concepts
+- Fundamental principles
+- Simple examples
+- Step-by-step guides
+"""
 
     def _generate_code_examples(self, topic: Topic, difficulty: str) -> List[Dict[str, Any]]:
-        return [{"title": "Example", "code": "# Code example"}]
+        examples = []
+        
+        # Basic example
+        examples.append({
+            "title": "Basic Example",
+            "code": f"""
+# Basic implementation of {topic.title}
+def example_function():
+    # TODO: Add implementation
+    print("Basic example of {topic.title}")
+    
+# Usage
+example_function()
+"""
+        })
+        
+        # Add difficulty-specific examples
+        if difficulty == "advanced":
+            examples.append({
+                "title": "Advanced Implementation",
+                "code": f"""
+# Advanced implementation with best practices
+class Advanced{topic.title.replace(' ', '')}:
+    def __init__(self):
+        self.config = self._initialize_config()
+    
+    def _initialize_config(self):
+        return {{"optimization": True, "logging": True}}
+    
+    def process(self, data):
+        # TODO: Add advanced implementation
+        print("Processing with advanced techniques")
+"""
+            })
+        elif difficulty == "intermediate":
+            examples.append({
+                "title": "Practical Application",
+                "code": f"""
+# Practical implementation example
+def practical_example():
+    # TODO: Add practical implementation
+    result = process_data()
+    return result
+
+def process_data():
+    # TODO: Add data processing logic
+    return "Processed data"
+"""
+            })
+            
+        return examples
 
     def _generate_exercises(self, topic: Topic, difficulty: str) -> List[Dict[str, Any]]:
-        return [{"title": "Exercise", "description": "Practice exercise"}]
+        exercises = []
+        
+        # Basic exercise
+        exercises.append({
+            "title": "Basic Implementation Exercise",
+            "description": f"""
+Complete the following tasks:
+1. Implement a basic version of {topic.title}
+2. Test your implementation with the provided examples
+3. Explain how your solution works
+"""
+        })
+        
+        # Add difficulty-specific exercises
+        if difficulty == "advanced":
+            exercises.append({
+                "title": "Advanced Challenge",
+                "description": f"""
+Advanced Implementation Challenge:
+1. Implement an optimized version of {topic.title}
+2. Add error handling and logging
+3. Write unit tests for your implementation
+4. Document your code following best practices
+"""
+            })
+        elif difficulty == "intermediate":
+            exercises.append({
+                "title": "Practice Project",
+                "description": f"""
+Practice Project:
+1. Create a working implementation of {topic.title}
+2. Add basic error handling
+3. Write documentation for your code
+"""
+            })
+            
+        return exercises
 
 class TheoreticalTemplate(TutorialTemplate):
     def create_tutorial_content(self, topic: Topic, user_performance: float) -> Dict[str, Any]:
@@ -1254,7 +1418,100 @@ def apply_custom_css():
         }
         </style>
     """, unsafe_allow_html=True)
+def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
+    """Generate teaching message using adaptive tutorial generator"""
+    try:
+        # Get user performance from conversation history
+        user_performance = calculate_user_performance(conversation_history)
+        
+        # Generate adaptive tutorial content
+        generator = AdaptiveTutorialGenerator()
+        tutorial_content = generator.generate_tutorial(topic, user_performance)
+        
+        # Format the message content
+        formatted_content = f"""
+# {topic.title} 📚
 
+## Overview
+{tutorial_content.get('content', 'No content available.')}
+
+## Code Examples 💻
+"""
+        
+        # Add code examples if available
+        for example in tutorial_content.get('code_examples', []):
+            formatted_content += f"""
+### {example['title']}
+```python
+{example['code']}
+```
+"""
+
+        # Add practice exercises
+        formatted_content += "\n## Practice Exercises ✍️\n"
+        for exercise in tutorial_content.get('practice_exercises', []):
+            formatted_content += f"""
+### {exercise['title']}
+{exercise['description']}
+"""
+
+        return {
+            "content": formatted_content,
+            "examples": tutorial_content.get('code_examples', []),
+            "exercises": tutorial_content.get('practice_exercises', []),
+            "metadata": tutorial_content.get('metadata', {}),
+            "key_points": topic.metadata.get('key_points', []) if topic.metadata else []
+        }
+        
+    except Exception as e:
+        st.error(f"Error generating teaching message: {str(e)}")
+        return create_fallback_content(topic)
+
+def calculate_user_performance(conversation_history: List[Dict]) -> float:
+    """Calculate user performance from conversation history"""
+    if not conversation_history:
+        return 50.0
+        
+    # Look for evaluation results in recent messages
+    for message in reversed(conversation_history):
+        if message["role"] == "assistant" and "Understanding Level" in message["content"]:
+            try:
+                # Extract understanding level from the message
+                level_text = message["content"].split("Understanding Level")[1]
+                level = float(level_text.split("%")[0].strip())
+                return level
+            except:
+                continue
+                
+    return 50.0  # Default value if no evaluation found
+
+def create_fallback_content(topic: Topic) -> dict:
+    """Create basic content structure when main generation fails"""
+    fallback_content = f"""
+# {topic.title} 📚
+
+## Overview
+{topic.content}
+
+## Key Points
+- Basic understanding of the topic is essential
+- Practice and repetition help master the concepts
+- Seek additional resources for deeper understanding
+
+## Practice
+Can you explain the main concepts of {topic.title}?
+"""
+    
+    return {
+        "content": fallback_content,
+        "examples": [],
+        "exercises": [{
+            "title": "Basic Understanding",
+            "description": f"Explain the key concepts of {topic.title}"
+        }],
+        "metadata": {"difficulty": "beginner"},
+        "key_points": ["Basic understanding of concepts"]
+    }
 def main():
     """Main application function"""
     # Page configuration
