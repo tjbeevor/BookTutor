@@ -191,13 +191,86 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     try:
-        # [Previous prompt code remains the same]
+        # Define the prompt at the start of the function
+        prompt = f"""
+        Create a comprehensive educational module about: {topic.title}
         
+        Return a JSON object with exactly this structure:
+        {{
+            "overview": {{
+                "basic_definition": "Clear, concise definition of {topic.title}",
+                "context": "Why {topic.title} is important in today's world",
+                "key_benefits": [
+                    "Benefit 1",
+                    "Benefit 2",
+                    "Benefit 3",
+                    "Benefit 4"
+                ],
+                "historical_context": "How {topic.title} has evolved",
+                "statistics": [
+                    {{"stat": "Key statistic 1", "impact": "Why this matters"}},
+                    {{"stat": "Key statistic 2", "impact": "Why this matters"}},
+                    {{"stat": "Key statistic 3", "impact": "Why this matters"}}
+                ],
+                "practical_relevance": "How {topic.title} applies to daily life",
+                "global_impact": "Broader societal impact of {topic.title}"
+            }},
+            "key_points": [
+                {{
+                    "point": "Main point 1",
+                    "explanation": "Detailed explanation",
+                    "importance": "Why this matters"
+                }},
+                {{
+                    "point": "Main point 2",
+                    "explanation": "Detailed explanation",
+                    "importance": "Why this matters"
+                }}
+            ],
+            "detailed_explanation": {{
+                "main_concepts": [
+                    {{
+                        "title": "Key concept 1",
+                        "description": "Detailed description",
+                        "steps": ["Step 1", "Step 2", "Step 3"],
+                        "important_notes": ["Important note 1", "Important note 2"]
+                    }},
+                    {{
+                        "title": "Key concept 2",
+                        "description": "Detailed description",
+                        "steps": ["Step 1", "Step 2", "Step 3"],
+                        "important_notes": ["Important note 1", "Important note 2"]
+                    }}
+                ]
+            }},
+            "example_scenario": {{
+                "situation": "Detailed real-world scenario",
+                "application_steps": ["Step 1", "Step 2", "Step 3"],
+                "critical_decisions": ["Decision 1", "Decision 2"],
+                "outcome": {{
+                    "immediate_results": "What happens right away",
+                    "long_term_impact": "Long-term effects",
+                    "lessons_learned": ["Lesson 1", "Lesson 2"]
+                }}
+            }},
+            "practice_question": {{
+                "main_question": "Primary question about {topic.title}",
+                "sub_questions": ["Sub-question 1", "Sub-question 2", "Sub-question 3"],
+                "key_considerations": ["Consideration 1", "Consideration 2"]
+            }},
+            "expected_points": ["Expected response point 1", "Expected response point 2"]
+        }}
+
+        Make the content detailed, practical, and engaging. Include relevant statistics and real-world applications.
+        Use markdown formatting where appropriate.
+        """
+        
+        # Generate content using the model
         response = model.generate_content(prompt)
         content = json.loads(clean_json_string(response.text))
         
-        # Improved formatting with better error handling
         try:
+            # [Rest of the function remains the same as in the previous version]
             overview_section = f"""
 # {topic.title} 📚
 
@@ -293,7 +366,6 @@ Key points to address:
 
         except KeyError as ke:
             st.warning(f"Missing expected data in content structure: {str(ke)}")
-            # Provide simplified but complete content when data is missing
             return create_fallback_content(topic)
             
         except Exception as e:
@@ -325,6 +397,8 @@ Can you explain the main concepts of {topic.title}?
         "question": f"Can you explain the key points of {topic.title}?",
         "key_points": ["Basic understanding of concepts"]
     }
+
+
 def main():
     # Page configuration
     st.set_page_config(
