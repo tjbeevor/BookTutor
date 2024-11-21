@@ -26,7 +26,7 @@ def initialize_model():
         
         # List available models
         models = genai.list_models()
-        available_models = [model['name'] for model in models]
+        available_models = [model.name for model in models]  # Corrected line
         if not available_models:
             st.error("No models available. Please check your API key and permissions.")
             return None
@@ -140,9 +140,224 @@ Content to analyze:
             st.error(f"Error in document analysis: {str(e)}")
             return [self._create_fallback_structure(text_content)]
 
-    # ... (rest of the class methods remain the same)
+    def _clean_json_text(self, text: str) -> str:
+        """More aggressive JSON text cleaning"""
+        try:
+            # Remove any markdown code block markers and extra whitespace
+            text = text.replace('```json', '').replace('```', '')
+            text = text.strip()
+            
+            # Find the first '{' and last '}'
+            start = text.find('{')
+            end = text.rfind('}')
+            
+            if start != -1 and end != -1:
+                text = text[start:end+1]
+            
+            # More aggressive cleaning
+            text = text.replace('\\"', '"')  # Fix escaped quotes
+            text = text.replace('\n', ' ')   # Remove newlines
+            text = text.replace('\\n', ' ')  # Remove escaped newlines
+            text = text.replace('\\', '')    # Remove remaining backslashes
+            text = ' '.join(text.split())    # Normalize spacing
+            
+            # Fix common JSON formatting issues
+            text = text.replace('"{', '{')   # Fix escaped objects
+            text = text.replace('}"', '}')   # Fix escaped objects
+            text = text.replace(',}', '}')   # Remove trailing commas
+            text = text.replace(',]', ']')   # Remove trailing commas
+            
+            # Replace single quotes with double quotes
+            text = text.replace("'", '"')
+            
+            # Fix missing quotes around property names
+            import re
+            text = re.sub(r'(\s*{?\s*)(\w+)(\s*:)', r'\1"\2"\3', text)
+            
+            # Validate JSON structure before returning
+            json.loads(text)  # Test if it's valid JSON
+            return text
+            
+        except json.JSONDecodeError:
+            # Create a minimal valid JSON structure
+            return json.dumps(self._create_fallback_structure("Content parsing error"))
+        
+        except Exception as e:
+            st.error(f"Error cleaning JSON text: {str(e)}")
+            return json.dumps(self._create_fallback_structure("Content parsing error"))
 
-    # Ensure that in teach_topic, you're also using self.model correctly
+    def _split_into_chunks(self, text: str) -> List[str]:
+        """Split content into logical sections with size limits"""
+        max_chunk_size = 4000  # Adjust as needed
+        lines = text.split('\n')
+        sections = []
+        current_section = []
+
+        for line in lines:
+            if self._is_section_header(line) and current_section:
+                section_text = '\n'.join(current_section).strip()
+                if section_text:
+                    sections.append(section_text)
+                current_section = [line]
+            else:
+                current_section.append(line)
+        
+        if current_section:
+            section_text = '\n'.join(current_section).strip()
+            if section_text:
+                sections.append(section_text)
+        
+        # If no natural sections found, create chunks of reasonable size
+        if len(sections) <= 1:
+            chunks = [text[i:i+max_chunk_size] for i in range(0, len(text), max_chunk_size)]
+            # Ensure chunks break at sentence boundaries where possible
+            return self._refine_chunks(chunks)
+            
+        return sections
+
+    def _refine_chunks(self, chunks: List[str]) -> List[str]:
+        """Refine chunk boundaries to break at natural points"""
+        refined_chunks = []
+        for chunk in chunks:
+            if len(chunk) < 4000:
+                refined_chunks.append(chunk)
+            else:
+                # Break at last full stop within chunk
+                last_period = chunk.rfind('.')
+                if last_period != -1:
+                    refined_chunks.append(chunk[:last_period+1])
+                else:
+                    refined_chunks.append(chunk)
+        return refined_chunks
+
+    def _is_section_header(self, line: str) -> bool:
+        """Detect if a line is likely a section header"""
+        line = line.strip()
+        if not line:
+            return False
+            
+        patterns = [
+            lambda x: x.isupper() and len(x) > 10,
+            lambda x: x.startswith(('#', 'Chapter', 'Section')),
+            lambda x: any(char.isdigit() for char in x[:5]) and len(x) < 100,
+            lambda x: x.endswith(':') and len(x) < 100
+        ]
+        
+        return any(pattern(line) for pattern in patterns)
+
+    def _validate_topic(self, topic: Dict) -> bool:
+        """Validate topic structure with detailed feedback"""
+        # First check if content exists and is None
+        if 'content' in topic and topic['content'] is None:
+            topic['content'] = ''  # Set empty string instead of None
+        
+        required_fields = [
+            'title', 
+            'learning_objectives', 
+            'key_points', 
+            'content'
+        ]
+        
+        missing_fields = [field for field in required_fields if field not in topic]
+        if missing_fields:
+            st.warning(f"Missing required fields: {', '.join(missing_fields)}")
+            return False
+    
+        # Validate field types
+        type_checks = {
+            'title': str,
+            'learning_objectives': list,
+            'key_points': list,
+            'content': str
+        }
+        
+        for field, expected_type in type_checks.items():
+            if field in topic and not isinstance(topic[field], expected_type):
+                # Convert None to empty string for content field
+                if field == 'content' and topic[field] is None:
+                    topic[field] = ''
+                else:
+                    st.warning(f"Field '{field}' has incorrect type. Expected {expected_type}, got {type(topic[field])}")
+                    return False
+                    
+        return True
+
+    def _enhance_topic(self, topic: Dict, original_section: str) -> Dict:
+        """Enhance topic with additional context and structure"""
+        # Ensure all fields are present
+        topic.setdefault('practical_exercises', [])
+        topic.setdefault('knowledge_check', {'questions': []})
+        topic.setdefault('real_world_applications', [])
+        topic.setdefault('additional_resources', [])
+        topic.setdefault('difficulty', 'beginner')
+        topic.setdefault('estimated_time', '30 minutes')
+
+        # Preserve original content structure
+        if 'content' in topic:
+            topic['content'] = self._preserve_formatting(topic['content'], original_section)
+
+        return topic
+
+    def _preserve_formatting(self, content: str, original: str) -> str:
+        """Preserve original formatting and structure where possible"""
+        # Preserve lists
+        lines = content.split('\n')
+        formatted_lines = []
+        for line in lines:
+            if line.strip().startswith(('•', '-', '*', '1.', '2.')):
+                formatted_lines.append(f"\n{line}")
+            else:
+                formatted_lines.append(line)
+        return '\n'.join(formatted_lines)
+
+    def _post_process_topics(self, topics: List[Dict]) -> List[Dict]:
+        """Ensure topics flow logically and maintain document structure"""
+        processed_topics = []
+        current_difficulty = "beginner"
+        
+        for i, topic in enumerate(topics):
+            # Ensure progression of difficulty
+            if i > len(topics) // 2:
+                current_difficulty = "intermediate"
+            if i > len(topics) * 0.8:
+                current_difficulty = "advanced"
+            
+            # Add cross-references and connections
+            if i > 0:
+                topic['prerequisites'] = [topics[i-1]['title']]
+            if i < len(topics) - 1:
+                topic['next_steps'] = [topics[i+1]['title']]
+            
+            topic['difficulty'] = current_difficulty
+            processed_topics.append(topic)
+        
+        return processed_topics
+
+    def _create_fallback_structure(self, content: str) -> Dict:
+        """Create more informative fallback structure when parsing fails"""
+        return {
+            'title': 'Content Section',
+            'learning_objectives': ['Understand the key concepts in this section'],
+            'key_points': ['Review the main points presented in this material'],
+            'content': content[:1000] + ("..." if len(content) > 1000 else ""),
+            'practical_exercises': ['Summarize the main concepts presented'],
+            'knowledge_check': {
+                'questions': [{
+                    'question': 'What are the main topics covered in this section?',
+                    'options': [
+                        'Review the content to identify key topics',
+                        'Analyze the main concepts presented',
+                        'Summarize the key points',
+                        'All of the above'
+                    ],
+                    'correct_answer': 'All of the above',
+                    'explanation': 'A thorough review of the content will help identify and understand the key topics.'
+                }]
+            },
+            'difficulty': 'beginner',
+            'estimated_time': '15 minutes'
+        }
+
     def teach_topic(self, topic: Dict, user_progress: Dict) -> str:
         """Generate engaging lesson content with proper response handling"""
         try:
@@ -187,7 +402,34 @@ Use markdown formatting for clear structure and engagement.
             st.error(f"Error generating lesson: {str(e)}")
             return "Error generating lesson content."
 
-# ... (rest of the code remains the same)
+def process_text_from_file(file_content, file_type) -> str:
+    """Process uploaded file content"""
+    try:
+        if file_type == "application/pdf":
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+            text = "\n\n".join(page.extract_text() or '' for page in pdf_reader.pages)
+            
+        elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(io.BytesIO(file_content))
+            text = "\n\n".join(paragraph.text for paragraph in doc.paragraphs)
+            
+        elif file_type == "text/markdown":
+            text = file_content.decode()
+            
+        else:
+            raise ValueError(f"Unsupported file type: {file_type}")
+        
+        return text.strip()
+        
+    except Exception as e:
+        raise Exception(f"Error processing file: {str(e)}")
+
+def reset_application():
+    """Reset the application state"""
+    for key in list(st.session_state.keys()):
+        if key not in ['api_key', 'model_name']:  # Preserve API key and model name
+            del st.session_state[key]
+    st.experimental_rerun()
 
 def main():
     """Main application function"""
