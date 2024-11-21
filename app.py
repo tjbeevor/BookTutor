@@ -110,25 +110,13 @@ class Topic:
     completed: bool = False
     parent: Optional['Topic'] = None
     metadata: Dict[str, Any] = None
-    content_type: str = "general"
+    content_type: str = "technical"  # Changed default to technical
     difficulty_level: str = "intermediate"
 
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
-            
-    def add_subtopic(self, subtopic: 'Topic') -> None:
-        """Add a subtopic and set its parent"""
-        subtopic.parent = self
-        self.subtopics.append(subtopic)
-    
-    def get_all_subtopics(self) -> List['Topic']:
-        """Get all subtopics recursively"""
-        all_subtopics = []
-        for subtopic in self.subtopics:
-            all_subtopics.append(subtopic)
-            all_subtopics.extend(subtopic.get_all_subtopics())
-        return all_subtopics
+        self.metadata['content_type'] = self.content_type  # Ensure content_type is in metadata
 
 @dataclass
 class UserProgress:
@@ -812,56 +800,163 @@ class AdaptiveTutorialGenerator:
             'practical': PracticalTemplate()
         }
         
-    def generate_tutorial(self, topic: Topic, user_performance: float) -> Dict[str, Any]:
+    def generate_tutorial(self, topic: Topic, user_performance: float,
+                         cognitive_level: Optional[float] = None,
+                         quality_level: Optional[float] = None,
+                         previous_evaluations: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """Generate tutorial content based on topic type and user performance"""
-        template = self.templates.get(topic.content_type, TechnicalTemplate())
-        return template.create_tutorial_content(topic, user_performance)
+        try:
+            print(f"DEBUG - Generating tutorial for topic type: {topic.content_type if hasattr(topic, 'content_type') else 'None'}")
+            print(f"DEBUG - Available templates: {list(self.templates.keys())}")
+            
+            # Default to technical template if content_type is missing or invalid
+            content_type = getattr(topic, 'content_type', 'technical')
+            if not content_type or content_type not in self.templates:
+                content_type = 'technical'
+                
+            template = self.templates[content_type]
+            
+            # Create tutorial content
+            content = template.create_tutorial_content(
+                topic=topic,
+                user_performance=user_performance
+            )
+            
+            # Enhance content with cognitive and quality data if available
+            if cognitive_level is not None and quality_level is not None:
+                content = self._enhance_content(
+                    content=content,
+                    cognitive_level=cognitive_level,
+                    quality_level=quality_level
+                )
+            
+            # Add recommendations based on previous evaluations
+            if previous_evaluations:
+                content = self._add_recommendations(
+                    content=content,
+                    evaluations=previous_evaluations
+                )
+                
+            return content
+            
+        except Exception as e:
+            st.error(f"Error in tutorial generation: {str(e)}")
+            return self._create_fallback_content(topic)
+            
+    def _enhance_content(self, content: Dict[str, Any],
+                        cognitive_level: float,
+                        quality_level: float) -> Dict[str, Any]:
+        """Enhance content based on cognitive and quality metrics"""
+        # Adjust difficulty based on cognitive level
+        if cognitive_level < 50:
+            content['content'] = self._simplify_content(content['content'])
+        elif cognitive_level > 80:
+            content['content'] = self._add_advanced_content(content['content'])
+            
+        # Add quality-based improvements
+        if quality_level < 50:
+            content['content'] = self._add_examples(content['content'])
+            
+        return content
+        
+    def _add_recommendations(self, content: Dict[str, Any],
+                           evaluations: List[Dict]) -> Dict[str, Any]:
+        """Add personalized recommendations based on evaluation history"""
+        if not evaluations:
+            return content
+            
+        # Analyze recent evaluations
+        recent_evals = evaluations[-3:]
+        weak_points = self._identify_weak_points(recent_evals)
+        
+        # Add recommendations section
+        content['recommendations'] = [
+            f"Focus on understanding {point}" for point in weak_points
+        ]
+        
+        return content
+        
+    def _identify_weak_points(self, evaluations: List[Dict]) -> List[str]:
+        """Identify areas needing improvement from evaluations"""
+        weak_points = []
+        
+        for eval_data in evaluations:
+            evaluation = eval_data.get('evaluation', {})
+            cognitive_skills = evaluation.get('evaluation_data', {}).get('cognitive_skills', {})
+            
+            # Check for consistently low scores
+            for skill, score in cognitive_skills.items():
+                if score < 70:
+                    weak_points.append(skill)
+                    
+        return list(set(weak_points))  # Remove duplicates
+        
+    def _simplify_content(self, content: str) -> str:
+        """Simplify content for better understanding"""
+        # Add more basic explanations
+        simplified = f"""
+{content}
 
-    def adapt_difficulty(self, user_performance: float, current_difficulty: str) -> str:
-        """Adapt difficulty based on user performance"""
-        if user_performance >= 85 and current_difficulty != "advanced":
-            return "advanced"
-        elif user_performance >= 65 and current_difficulty == "beginner":
-            return "intermediate"
-        elif user_performance < 65 and current_difficulty != "beginner":
-            return "beginner"
-        return current_difficulty
+## Simple Explanation
+Let's break this down into simpler terms:
+- Start with the basics
+- Use step-by-step examples
+- Practice with simple exercises
+"""
+        return simplified
+        
+    def _add_advanced_content(self, content: str) -> str:
+        """Add advanced content for high performers"""
+        # Add more challenging material
+        advanced = f"""
+{content}
 
-    def generate_alternative_explanation(self, topic: Topic, 
-                                      previous_approach: str) -> Dict[str, Any]:
-        """Generate alternative explanation when user struggles"""
-        # Define possible approaches
-        approaches = ["practical", "theoretical", "technical"]
+## Advanced Concepts
+For deeper understanding:
+- Explore advanced applications
+- Consider edge cases
+- Challenge yourself with complex scenarios
+"""
+        return advanced
         
-        # Choose next approach (different from previous)
-        next_approach = next(
-            (a for a in approaches if a != previous_approach), 
-            "practical"
-        )
+    def _add_examples(self, content: str) -> str:
+        """Add more examples for clarity"""
+        # Add practical examples
+        with_examples = f"""
+{content}
+
+## Additional Examples
+Here are some practical examples:
+1. Basic application
+2. Common use case
+3. Practice scenario
+"""
+        return with_examples
         
-        # Use corresponding template for new approach
-        template = self.templates[next_approach]
-        
-        # Generate content with modified difficulty
-        alternative_content = template.create_tutorial_content(topic, 50.0)  # Start at middle difficulty
-        
-        # Add meta information about the alternative approach
-        alternative_content["meta"] = {
-            "approach": next_approach,
-            "reason": "Alternative explanation provided due to learning difficulty",
-            "focus": self._get_approach_focus(next_approach)
+    def _create_fallback_content(self, topic: Topic) -> Dict[str, Any]:
+        """Create basic content when main generation fails"""
+        return {
+            "content": f"""
+# {topic.title}
+
+## Basic Overview
+{topic.content}
+
+## Key Points
+- Understand the fundamentals
+- Practice regularly
+- Ask questions when needed
+
+## Next Steps
+1. Review the material
+2. Try simple exercises
+3. Build on basic concepts
+""",
+            "metadata": {
+                "difficulty": "beginner",
+                "type": "general"
+            }
         }
-        
-        return alternative_content
-
-    def _get_approach_focus(self, approach: str) -> str:
-        """Get the focus area for each approach type"""
-        focus_map = {
-            "practical": "hands-on examples and real-world applications",
-            "theoretical": "underlying concepts and principles",
-            "technical": "implementation details and specific techniques"
-        }
-        return focus_map.get(approach, "general understanding")
 
 class TutorialManager:
     """Enhanced Tutorial Manager with improved evaluation handling"""
@@ -869,7 +964,7 @@ class TutorialManager:
     def __init__(self, model):
         self.content_analyzer = ContentAnalyzer(model)
         self.tutorial_generator = AdaptiveTutorialGenerator()
-        self.evaluation_engine = EnhancedEvaluationEngine(model)  # Use new evaluation engine
+        self.evaluation_engine = EnhancedEvaluationEngine(model)
         self.current_performance = {
             'understanding_level': 50.0,
             'cognitive_skills': {
@@ -885,32 +980,66 @@ class TutorialManager:
             }
         }
         self.approach_history = []
-        self.topic_evaluations = {}  # Store detailed evaluations per topic
+        self.topic_evaluations = {}
         
     def create_tutorial(self, content: Dict[str, Any]) -> List[Topic]:
         """Create a new tutorial from content"""
-        topics = self.content_analyzer.analyze_content(content)
-        # Initialize evaluation storage for each topic
-        for topic in topics:
-            self.topic_evaluations[topic.title] = []
-        return topics
-        
+        try:
+            topics = self.content_analyzer.analyze_content(content)
+            # Initialize evaluation storage for each topic
+            for topic in topics:
+                self.topic_evaluations[topic.title] = []
+            return topics
+        except Exception as e:
+            st.error(f"Error creating tutorial: {str(e)}")
+            return []
+            
     def generate_next_content(self, topic: Topic) -> Dict[str, Any]:
         """Generate next piece of tutorial content with adaptive difficulty"""
-        # Use cognitive skills to adjust content difficulty
-        cognitive_level = sum(self.current_performance['cognitive_skills'].values()) / 3
-        
-        # Adjust content based on response quality
-        quality_level = sum(self.current_performance['response_quality'].values()) / 4
-        
-        # Generate tutorial content with enhanced parameters
-        return self.tutorial_generator.generate_tutorial(
-            topic=topic,
-            user_performance=self.current_performance['understanding_level'],
-            cognitive_level=cognitive_level,
-            quality_level=quality_level,
-            previous_evaluations=self.topic_evaluations.get(topic.title, [])
-        )
+        try:
+            print(f"DEBUG - Topic content type: {topic.content_type if hasattr(topic, 'content_type') else 'None'}")
+            print(f"DEBUG - Current performance: {self.current_performance}")
+            
+            # Calculate cognitive level
+            cognitive_level = sum(self.current_performance['cognitive_skills'].values()) / 3
+            
+            # Calculate quality level
+            quality_level = sum(self.current_performance['response_quality'].values()) / 4
+            
+            # Get tutorial content
+            content = self.tutorial_generator.generate_tutorial(
+                topic=topic,
+                user_performance=self.current_performance['understanding_level'],
+                cognitive_level=cognitive_level,
+                quality_level=quality_level,
+                previous_evaluations=self.topic_evaluations.get(topic.title, [])
+            )
+            
+            if not content:
+                raise ValueError("No content generated")
+                
+            return content
+            
+        except Exception as e:
+            st.error(f"Error generating content: {str(e)}")
+            # Return fallback content
+            return {
+                "content": f"""
+# {topic.title}
+
+## Content
+{topic.content}
+
+## Key Points
+- Review the main concepts
+- Practice with examples
+- Ask questions if needed
+""",
+                "metadata": {
+                    "difficulty": "beginner",
+                    "type": "general"
+                }
+            }
         
     def evaluate_response(self, user_response: str, topic: Topic) -> Dict[str, Any]:
         """Evaluate user response with enhanced feedback"""
@@ -935,15 +1064,6 @@ class TutorialManager:
             # Update performance metrics
             self._update_performance_metrics(evaluation_result)
             
-            # Generate adaptive recommendations
-            recommendations = self._generate_adaptive_recommendations(
-                topic=topic,
-                evaluation_result=evaluation_result
-            )
-            
-            # Add recommendations to evaluation result
-            evaluation_result['recommendations'] = recommendations
-            
             return evaluation_result
             
         except Exception as e:
@@ -952,136 +1072,37 @@ class TutorialManager:
             
     def _update_performance_metrics(self, evaluation_result: Dict[str, Any]) -> None:
         """Update all performance metrics from evaluation"""
-        # Update understanding level
-        self.current_performance['understanding_level'] = evaluation_result.get(
-            'understanding_level',
-            self.current_performance['understanding_level']
-        )
-        
-        # Update cognitive skills
-        eval_cognitive = evaluation_result.get('evaluation_data', {}).get('cognitive_skills', {})
-        for skill, value in eval_cognitive.items():
-            if skill in self.current_performance['cognitive_skills']:
-                # Use exponential moving average for smooth transitions
-                alpha = 0.3  # Smoothing factor
-                current = self.current_performance['cognitive_skills'][skill]
-                self.current_performance['cognitive_skills'][skill] = (
-                    alpha * value + (1 - alpha) * current
-                )
-        
-        # Update response quality metrics
-        eval_quality = evaluation_result.get('evaluation_data', {}).get('response_quality', {})
-        for metric, value in eval_quality.items():
-            if metric in self.current_performance['response_quality']:
-                # Use exponential moving average
-                alpha = 0.3
-                current = self.current_performance['response_quality'][metric]
-                self.current_performance['response_quality'][metric] = (
-                    alpha * value + (1 - alpha) * current
-                )
-    
-    def _generate_adaptive_recommendations(self, 
-                                        topic: Topic,
-                                        evaluation_result: Dict[str, Any]) -> List[str]:
-        """Generate personalized recommendations based on performance history"""
-        recommendations = []
-        
-        # Analyze performance trends
-        topic_history = self.topic_evaluations[topic.title]
-        if len(topic_history) >= 2:
-            # Check for recurring issues
-            recurring_issues = self._identify_recurring_issues(topic_history)
-            for issue in recurring_issues:
-                recommendations.append(f"Focus on improving {issue}")
-        
-        # Add cognitive skill-based recommendations
-        cognitive_skills = self.current_performance['cognitive_skills']
-        lowest_skill = min(cognitive_skills.items(), key=lambda x: x[1])
-        if lowest_skill[1] < 70:
-            recommendations.append(
-                f"Work on improving {lowest_skill[0]} through additional practice"
+        try:
+            # Update understanding level
+            self.current_performance['understanding_level'] = evaluation_result.get(
+                'understanding_level',
+                self.current_performance['understanding_level']
             )
-        
-        # Add quality-based recommendations
-        quality_metrics = self.current_performance['response_quality']
-        lowest_quality = min(quality_metrics.items(), key=lambda x: x[1])
-        if lowest_quality[1] < 70:
-            recommendations.append(
-                f"Focus on improving {lowest_quality[0]} in your responses"
-            )
-        
-        # Add topic-specific recommendations
-        topic_recommendations = self._get_topic_specific_recommendations(
-            topic,
-            evaluation_result
-        )
-        recommendations.extend(topic_recommendations)
-        
-        return recommendations
-    
-    def _identify_recurring_issues(self, topic_history: List[Dict]) -> List[str]:
-        """Identify recurring issues in user responses"""
-        issues = []
-        
-        # Analyze last 3 evaluations
-        recent_evals = topic_history[-3:]
-        
-        # Check for consistently low scores in specific areas
-        areas = {
-            'comprehension': [],
-            'application': [],
-            'analysis': [],
-            'clarity': [],
-            'completeness': [],
-            'accuracy': [],
-            'depth': []
-        }
-        
-        for eval_data in recent_evals:
-            evaluation = eval_data['evaluation']
             
-            # Collect cognitive skills scores
-            cognitive = evaluation.get('evaluation_data', {}).get('cognitive_skills', {})
-            for skill, score in cognitive.items():
-                areas[skill].append(score)
+            # Update cognitive skills
+            eval_cognitive = evaluation_result.get('evaluation_data', {}).get('cognitive_skills', {})
+            for skill, value in eval_cognitive.items():
+                if skill in self.current_performance['cognitive_skills']:
+                    # Use exponential moving average for smooth transitions
+                    alpha = 0.3  # Smoothing factor
+                    current = self.current_performance['cognitive_skills'][skill]
+                    self.current_performance['cognitive_skills'][skill] = (
+                        alpha * value + (1 - alpha) * current
+                    )
             
-            # Collect quality metrics
-            quality = evaluation.get('evaluation_data', {}).get('response_quality', {})
-            for metric, score in quality.items():
-                areas[metric].append(score)
-        
-        # Identify consistently low areas
-        for area, scores in areas.items():
-            if scores and all(score < 70 for score in scores):
-                issues.append(area)
-        
-        return issues
-    
-    def _get_topic_specific_recommendations(self, 
-                                          topic: Topic,
-                                          evaluation_result: Dict[str, Any]) -> List[str]:
-        """Generate recommendations specific to the topic"""
-        recommendations = []
-        
-        # Get missing points
-        point_analysis = evaluation_result.get('evaluation_data', {}).get('point_analysis', [])
-        missing_points = [
-            point['point'] for point in point_analysis 
-            if point['coverage'] == 'none'
-        ]
-        
-        if missing_points:
-            recommendations.append(
-                f"Review these key points: {', '.join(missing_points)}"
-            )
-        
-        # Add specific practice suggestions based on topic type
-        if topic.metadata and topic.metadata.get('content_type') == 'technical':
-            recommendations.append("Practice with hands-on examples")
-        elif topic.metadata and topic.metadata.get('content_type') == 'theoretical':
-            recommendations.append("Focus on understanding underlying principles")
-        
-        return recommendations
+            # Update response quality metrics
+            eval_quality = evaluation_result.get('evaluation_data', {}).get('response_quality', {})
+            for metric, value in eval_quality.items():
+                if metric in self.current_performance['response_quality']:
+                    # Use exponential moving average
+                    alpha = 0.3
+                    current = self.current_performance['response_quality'][metric]
+                    self.current_performance['response_quality'][metric] = (
+                        alpha * value + (1 - alpha) * current
+                    )
+                    
+        except Exception as e:
+            st.warning(f"Error updating metrics: {str(e)}")
     
     def _create_detailed_fallback_evaluation(self, topic: Topic) -> Dict[str, Any]:
         """Create detailed fallback evaluation when main evaluation fails"""
