@@ -146,9 +146,9 @@ def clean_json_string(json_str: str) -> str:
 
 def generate_tutorial_structure(content: str, model) -> List[Topic]:
     """
-    Generate a structured tutorial breakdown with focused micro-topics and robust error handling.
+    Generate a structured tutorial breakdown with full logic and robust JSON handling.
     """
-    def chunk_content(text: str, max_chunk_size: int = 4000) -> List[str]:
+    def chunk_content(text: str, max_chunk_size: int = 3000) -> List[str]:
         paragraphs = text.split('\n\n')
         chunks = []
         current_chunk = []
@@ -168,8 +168,8 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
             
         return chunks
 
-    def safe_json_loads(json_str: str) -> dict:
-        """Safely parse JSON with better error handling"""
+    def safe_json_loads(json_str: str, context: str = "") -> dict:
+        """Safely parse JSON with enhanced error handling"""
         try:
             # Remove any markdown formatting
             json_str = json_str.replace("```json", "").replace("```", "")
@@ -179,7 +179,8 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
             end_idx = json_str.rfind('}') + 1
             
             if start_idx == -1 or end_idx == 0:
-                raise ValueError("No valid JSON structure found")
+                st.warning(f"No valid JSON structure found in {context}")
+                return {"micro_lessons": []}
                 
             json_str = json_str[start_idx:end_idx]
             
@@ -188,120 +189,122 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
             json_str = json_str.replace('\r', ' ')
             json_str = json_str.replace('\t', ' ')
             json_str = ' '.join(json_str.split())
-            
-            # Fix common JSON syntax issues
             json_str = json_str.replace('} {', '},{')
             json_str = json_str.replace(']"', ']')
             json_str = json_str.replace('""', '"')
+            json_str = json_str.replace("'", '"')
+            json_str = json_str.replace(",]", "]")
+            json_str = json_str.replace(",}", "}")
             
             return json.loads(json_str)
         except Exception as e:
-            st.error(f"JSON parsing error: {str(e)}")
-            return {"main_subject": "", "concept_breakdown": [], "learning_sequence": []}
+            st.warning(f"JSON parsing error in {context}: {str(e)}")
+            return {"micro_lessons": []}
 
     try:
-        # Initial analysis to identify main topics and learning flow
+        # Initial analysis to understand document structure and learning flow
         analysis_prompt = """
-        Analyze this educational content and create a detailed learning structure by:
-        1. Identifying the main subject area
-        2. Breaking down complex topics into specific micro-lessons
-        3. Establishing prerequisites and learning outcomes
-        4. Creating a logical learning sequence
+        Analyze this educational content and create a detailed learning structure that:
+        1. Identifies the main subject and key topics
+        2. Breaks complex topics into focused micro-lessons
+        3. Establishes clear prerequisites and learning flow
+        4. Ensures logical progression of concepts
         
-        Return ONLY a JSON object in this EXACT format:
+        Return ONLY this exact JSON format (no additional text):
         {
           "main_subject": "subject name",
           "concept_breakdown": [
             {
-              "main_concept": "major topic name",
+              "topic": "major topic name",
               "micro_lessons": [
                 {
                   "title": "specific micro-lesson title",
                   "prerequisites": ["required knowledge"],
-                  "key_concepts": ["main points to cover"],
-                  "learning_outcome": "specific learner outcome",
-                  "difficulty_level": "beginner|intermediate|advanced"
+                  "key_concepts": ["main points"],
+                  "learning_outcome": "specific outcome",
+                  "difficulty": "beginner|intermediate|advanced"
                 }
-              ]
+              ],
+              "sequence": ["lesson 1", "lesson 2"]
             }
-          ],
-          "learning_sequence": ["micro-lesson 1", "micro-lesson 2"]
+          ]
         }
-        
-        Keep titles specific and focused on single concepts.
         """
         
-        # Get initial content analysis
-        response = model.generate_content(analysis_prompt + "\n\nContent:\n" + content[:4000])
-        analysis = safe_json_loads(response.text)
+        # Get initial analysis
+        response = model.generate_content(analysis_prompt + "\n\nContent:\n" + content[:3000])
+        analysis = safe_json_loads(response.text, "initial analysis")
         
-        # Process content in chunks with improved micro-lesson focus
+        # Process content in chunks with full logical structure
         chunks = chunk_content(content)
         all_topics = []
         
-        main_subject = analysis.get('main_subject', 'the subject')
-        concept_breakdown = analysis.get('concept_breakdown', [])
-        learning_sequence = analysis.get('learning_sequence', [])
+        # Extract learning sequence and prerequisites
+        learning_sequence = []
+        prerequisites_map = {}
+        
+        for concept in analysis.get('concept_breakdown', []):
+            for lesson in concept.get('micro_lessons', []):
+                learning_sequence.extend(concept.get('sequence', []))
+                prerequisites_map[lesson.get('title')] = lesson.get('prerequisites', [])
 
         for chunk_idx, chunk in enumerate(chunks):
-            prompt = f"""
-            Create focused micro-lessons for this content about {main_subject}.
-            Previous lessons created: {[topic.get('title', '') for topic in all_topics]}
+            chunk_prompt = f"""
+            Create focused micro-lessons for this content about {analysis.get('main_subject', 'the subject')}.
             
-            Guidelines:
-            1. Each micro-lesson must cover exactly ONE specific concept or skill
-            2. Break down complex topics into clear, manageable pieces
-            3. Ensure clear prerequisites and specific learning outcomes
-            4. Build upon previous knowledge systematically
+            Requirements:
+            1. Each micro-lesson covers ONE specific concept
+            2. Clear prerequisites and learning outcomes
+            3. Specific practice activities
+            4. Build on previous knowledge systematically
             
-            Return ONLY a JSON object in this EXACT format:
+            Previous lessons covered: {[t.get('title', '') for t in all_topics]}
+            
+            Return ONLY this exact JSON format (no additional text):
             {{
               "micro_lessons": [
                 {{
-                  "title": "specific focused title",
-                  "content": "clear, concise explanation",
-                  "prerequisites": ["specific required knowledge"],
+                  "title": "specific lesson title",
+                  "content": "clear explanation",
+                  "prerequisites": ["required knowledge"],
                   "key_concepts": ["main points"],
-                  "learning_outcome": "specific learner outcome",
-                  "practice_points": ["key areas to practice"],
+                  "practice_activities": ["specific practice tasks"],
+                  "learning_outcome": "specific outcome",
                   "difficulty": "beginner|intermediate|advanced"
                 }}
               ]
             }}
-            
-            Content chunk {chunk_idx + 1}:
+
+            Content chunk:
             {chunk}
             """
             
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    response = model.generate_content(prompt)
-                    structure = safe_json_loads(response.text)
+                    response = model.generate_content(chunk_prompt)
+                    structure = safe_json_loads(response.text, f"chunk {chunk_idx + 1}")
                     
                     if "micro_lessons" in structure and structure["micro_lessons"]:
                         # Process each micro-lesson
                         for lesson in structure["micro_lessons"]:
                             if not any(similar_titles(existing.get('title', ''), lesson.get('title', '')) 
                                      for existing in all_topics):
-                                # Enhance lesson with additional context
-                                lesson['main_subject'] = main_subject
-                                lesson['context'] = next(
-                                    (concept['main_concept'] for concept in concept_breakdown 
-                                     if any(similar_titles(ml['title'], lesson['title']) 
-                                           for ml in concept.get('micro_lessons', []))),
-                                    'General'
+                                # Enhance lesson with context and prerequisites
+                                lesson['prerequisites'] = (
+                                    prerequisites_map.get(lesson.get('title', ''), []) +
+                                    lesson.get('prerequisites', [])
                                 )
                                 all_topics.append(lesson)
                         break
                     
                 except Exception as e:
                     if attempt == max_retries - 1:
-                        st.warning(f"Chunk {chunk_idx + 1} processing failed, continuing with available content")
+                        st.warning(f"Failed to process chunk {chunk_idx + 1}: {str(e)}")
                     time.sleep(1)
 
         def similar_titles(title1: str, title2: str) -> bool:
-            """Enhanced similarity check to prevent duplicate topics"""
+            """Enhanced similarity check for topics"""
             if not title1 or not title2:
                 return False
             title1_words = set(title1.lower().strip().split())
@@ -312,7 +315,7 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
         # Sort topics based on learning sequence and prerequisites
         def get_topic_score(topic: dict) -> tuple:
-            # Get explicit sequence position
+            # Get sequence position
             sequence_pos = next((i for i, seq in enumerate(learning_sequence) 
                                if similar_titles(topic.get('title', ''), seq)), len(learning_sequence))
             
@@ -327,8 +330,8 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
         # Convert to Topic objects with enhanced content structure
         def create_topic(topic_data: dict) -> Topic:
-            # Format content with clear sections
-            content = f"""Learning Outcome: {topic_data.get('learning_outcome', 'Not specified')}
+            content = f"""Learning Outcome:
+{topic_data.get('learning_outcome', 'Not specified')}
 
 Key Concepts:
 {chr(10).join('- ' + concept for concept in topic_data.get('key_concepts', []))}
@@ -336,8 +339,8 @@ Key Concepts:
 Content:
 {topic_data.get('content', '')}
 
-Practice Focus:
-{chr(10).join('- ' + point for point in topic_data.get('practice_points', []))}
+Practice Activities:
+{chr(10).join('- ' + activity for activity in topic_data.get('practice_activities', []))}
 
 Prerequisites:
 {chr(10).join('- ' + prereq for prereq in topic_data.get('prerequisites', []))}
@@ -353,13 +356,28 @@ Prerequisites:
         final_topics = [create_topic(t) for t in all_topics if isinstance(t, dict)]
         
         if not final_topics:
-            raise ValueError("No valid topics could be generated from the content")
-            
+            st.warning("No topics generated, creating default structure")
+            final_topics = [
+                Topic(
+                    title="Introduction to " + analysis.get('main_subject', 'the Subject'),
+                    content="Basic introduction to the subject matter.",
+                    subtopics=[],
+                    completed=False
+                )
+            ]
+        
         return final_topics
         
     except Exception as e:
-        st.error(f"Error generating tutorial structure: {str(e)}")
-        raise
+        st.error(f"Error in tutorial structure generation: {str(e)}")
+        return [
+            Topic(
+                title="Getting Started",
+                content="Introduction to the subject matter.",
+                subtopics=[],
+                completed=False
+            )
+        ]
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     """
