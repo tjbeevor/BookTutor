@@ -79,222 +79,275 @@ def init_gemini(api_key: str = None):
     return None
 
 def process_pdf(pdf_file) -> str:
+    """
+    Process PDF file and extract text with better error handling and text cleaning.
+    """
     try:
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_file.read()))
         text = ""
         for page in pdf_reader.pages:
-            text += page.extract_text() + "\n"
-        return text.strip()
+            try:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n\n"
+            except Exception as e:
+                st.warning(f"Warning: Could not process a page in the PDF. Continuing with rest of document. Error: {str(e)}")
+                continue
+                
+        # Clean and normalize the text
+        text = text.replace('\x00', '')  # Remove null bytes
+        text = ' '.join(text.split())  # Normalize whitespace
+        text = text.strip()
+        
+        if not text:
+            raise ValueError("No readable text found in the PDF")
+            
+        return text
+        
     except Exception as e:
-        st.error(f"Error reading PDF: {str(e)}")
+        st.error(f"Error processing PDF: {str(e)}")
         raise
 
 def clean_json_string(json_str: str) -> str:
-    """Clean and format JSON string to ensure valid parsing."""
-    # Remove markdown code block indicators
-    json_str = json_str.replace("```json", "").replace("```", "")
-    
-    # Replace numbered list items with actual strings
-    json_str = json_str.replace("[1.", '["').replace("2.", '","').replace("3.", '","').replace("4.", '","')
-    if json_str.count('[') > json_str.count(']'):
-        json_str = json_str + '"]'
-    
-    # Fix common formatting issues
-    json_str = json_str.replace('\n', ' ')
-    json_str = json_str.replace('\r', ' ')
-    json_str = json_str.replace('\t', ' ')
-    json_str = json_str.replace('**', '')
-    
-    # Fix list formatting
-    json_str = json_str.replace('* ', '')
-    
-    # Remove multiple spaces
-    json_str = ' '.join(json_str.split())
-    
-    # Fix common delimiter issues
-    json_str = json_str.replace('} {', '},{')
-    
-    # Clean up array delimiters
-    json_str = json_str.replace('[ ', '[').replace(' ]', ']')
-    
-    return json_str
+    """
+    More robust JSON string cleaning with better error handling.
+    """
+    try:
+        # Remove any markdown formatting
+        json_str = json_str.replace("```json", "").replace("```", "")
+        
+        # Find the first { and last } to extract valid JSON
+        start_idx = json_str.find('{')
+        end_idx = json_str.rfind('}') + 1
+        
+        if start_idx == -1 or end_idx == 0:
+            raise ValueError("No valid JSON structure found")
+            
+        json_str = json_str[start_idx:end_idx]
+        
+        # Clean up common formatting issues
+        json_str = json_str.replace('\n', ' ')
+        json_str = json_str.replace('\r', ' ')
+        json_str = json_str.replace('\t', ' ')
+        json_str = ' '.join(json_str.split())
+        
+        # Fix common JSON syntax issues
+        json_str = json_str.replace('} {', '},{')
+        json_str = json_str.replace(']"', ']')
+        json_str = json_str.replace('""', '"')
+        
+        # Test if it's valid JSON
+        json.loads(json_str)
+        return json_str
+        
+    except Exception as e:
+        st.error(f"Error cleaning JSON: {str(e)}")
+        raise
 
 def generate_tutorial_structure(content: str, model) -> List[Topic]:
-    prompt = f"""
-    Analyze this educational content and create a detailed tutorial outline.
-    Focus on creating a hierarchical structure with main topics and relevant subtopics.
-    For each topic and subtopic, provide 2-3 sentences of content that summarize the key points.
-    
-    Return the structure as valid JSON in this exact format:
-    {{
-        "topics": [
+    """
+    Generate a more robust tutorial structure with improved content chunking and error handling.
+    """
+    # Split content into manageable chunks
+    def chunk_content(text: str, max_chunk_size: int = 4000) -> List[str]:
+        words = text.split()
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for word in words:
+            if current_length + len(word) + 1 <= max_chunk_size:
+                current_chunk.append(word)
+                current_length += len(word) + 1
+            else:
+                chunks.append(' '.join(current_chunk))
+                current_chunk = [word]
+                current_length = len(word)
+                
+        if current_chunk:
+            chunks.append(' '.join(current_chunk))
+            
+        return chunks
+
+    try:
+        # Process content in chunks
+        chunks = chunk_content(content)
+        all_topics = []
+        
+        for chunk_idx, chunk in enumerate(chunks):
+            prompt = f"""
+            Create a structured tutorial outline for the following content.
+            Focus on identifying main topics and breaking them down into logical subtopics.
+            Keep the structure focused and coherent.
+
+            Rules:
+            1. Each topic should be clear and self-contained
+            2. Topics should flow logically from basic to advanced concepts
+            3. Include 2-3 sentences of explanatory content for each topic/subtopic
+            4. Ensure subtopics are directly related to their parent topic
+
+            Return the structure as valid JSON in this format:
             {{
-                "title": "Main Topic Title",
-                "content": "Detailed content explanation",
-                "subtopics": [
+                "topics": [
                     {{
-                        "title": "Subtopic Title",
-                        "content": "Detailed subtopic explanation",
-                        "subtopics": []
+                        "title": "Main Topic Title",
+                        "content": "Clear explanation of the topic",
+                        "subtopics": [
+                            {{
+                                "title": "Subtopic Title",
+                                "content": "Detailed subtopic explanation",
+                                "subtopics": []
+                            }}
+                        ]
                     }}
                 ]
             }}
-        ]
-    }}
 
-    Content to analyze: {content[:5000]}
-    """
-    
-    try:
-        response = model.generate_content(prompt)
-        response_text = clean_json_string(response.text)
-        
-        structure = json.loads(response_text)
-        
-        if "topics" not in structure or not structure["topics"]:
-            raise ValueError("Invalid tutorial structure generated")
-        
-        def create_topics(topic_data, parent=None) -> Topic:
+            Content chunk {chunk_idx + 1}:
+            {chunk}
+            """
+            
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    response = model.generate_content(prompt)
+                    response_text = clean_json_string(response.text)
+                    structure = json.loads(response_text)
+                    
+                    if "topics" not in structure or not structure["topics"]:
+                        raise ValueError("Invalid tutorial structure generated")
+                    
+                    # Add topics from this chunk
+                    all_topics.extend(structure["topics"])
+                    break
+                    
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        st.error(f"Failed to process chunk {chunk_idx + 1} after {max_retries} attempts")
+                        raise
+                    time.sleep(1)  # Brief pause before retry
+
+        # Merge and organize topics
+        def create_topics(topic_data: dict, parent: Optional[Topic] = None) -> Topic:
             topic = Topic(
                 title=topic_data["title"],
-                content=topic_data["content"],
+                content=topic_data.get("content", ""),
                 subtopics=[],
                 completed=False,
                 parent=parent
             )
-            topic.subtopics = [create_topics(st, topic) for st in topic_data.get("subtopics", [])]
-            return topic
-        
-        return [create_topics(t) for t in structure["topics"]]
             
+            # Create subtopics
+            for subtopic_data in topic_data.get("subtopics", []):
+                subtopic = create_topics(subtopic_data, topic)
+                topic.subtopics.append(subtopic)
+                
+            return topic
+
+        # Convert all topics to Topic objects
+        final_topics = [create_topics(t) for t in all_topics]
+        
+        # Remove duplicates and merge similar topics
+        def merge_similar_topics(topics: List[Topic]) -> List[Topic]:
+            merged = []
+            for topic in topics:
+                # Check if similar topic exists
+                similar_found = False
+                for existing in merged:
+                    if similar_titles(existing.title, topic.title):
+                        # Merge content and subtopics
+                        existing.content = combine_content(existing.content, topic.content)
+                        existing.subtopics.extend(topic.subtopics)
+                        similar_found = True
+                        break
+                        
+                if not similar_found:
+                    merged.append(topic)
+                    
+            return merged
+
+        def similar_titles(title1: str, title2: str) -> bool:
+            # Simple similarity check - can be improved
+            title1 = title1.lower().strip()
+            title2 = title2.lower().strip()
+            return (title1 in title2 or title2 in title1 or
+                   len(set(title1.split()) & set(title2.split())) >= 2)
+
+        def combine_content(content1: str, content2: str) -> str:
+            # Combine unique content
+            sentences1 = set(content1.split('. '))
+            sentences2 = set(content2.split('. '))
+            return '. '.join(sentences1 | sentences2)
+
+        final_topics = merge_similar_topics(final_topics)
+        
+        if not final_topics:
+            raise ValueError("No valid topics could be generated from the content")
+            
+        return final_topics
+        
     except Exception as e:
         st.error(f"Error generating tutorial structure: {str(e)}")
         raise
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
-    prompt = f"""
-    Create a structured lesson about: {topic.title}
-    Main content: {topic.content}
-
-    Provide your response in this EXACT format without any deviations:
-    {{
-        "explanation": "Write a detailed, multi-paragraph explanation here that introduces and explains the key concepts",
-        "examples": "Provide 2-3 specific, real-world examples that illustrate these concepts",
-        "question": "Write a specific question that tests understanding of both the concepts and examples provided",
-        "key_points": ["key point 1", "key point 2", "key point 3"]
-    }}
-
-    Your response should meet these criteria:
-
-    1. The explanation must:
-       - Introduce the topic clearly
-       - Break down key concepts
-       - Build understanding progressively
-       - Connect ideas logically
-       - Use clear, precise language
-
-    2. The examples must:
-       - Directly relate to the explanation
-       - Show real-world applications
-       - Move from simple to complex
-       - Demonstrate practical relevance
-
-    3. The question must:
-       - Test understanding of both concepts and examples covered
-       - Be specific to what was taught
-       - Require analytical thinking
-
-    CRITICAL: Return ONLY the JSON object. No additional text or formatting.
     """
-
+    Generate more robust teaching content with improved prompting and error handling.
+    """
     try:
-        response = model.generate_content(prompt)
-        response_text = response.parts[0].text.strip()
-        
-        # Remove any markdown formatting or extra content
-        if '```json' in response_text:
-            response_text = response_text.split('```json')[1].split('```')[0]
-        
-        # Ensure we have a clean JSON string
-        response_text = response_text.strip()
-        if not response_text.startswith('{'):
-            response_text = response_text[response_text.find('{'):]
-        if not response_text.endswith('}'):
-            response_text = response_text[:response_text.rfind('}')+1]
+        prompt = f"""
+        Create an engaging lesson about: {topic.title}
+        Main content: {topic.content}
+        Current teaching phase: {phase}
 
-        try:
-            lesson_content = json.loads(response_text)
-            
-            # Validate the content structure
-            required_keys = ["explanation", "examples", "question", "key_points"]
-            if not all(key in lesson_content for key in required_keys):
-                raise ValueError("Missing required content sections")
+        Create content that is:
+        1. Clear and well-structured
+        2. Engaging and interactive
+        3. Appropriate for the current phase
+        4. Builds on previous knowledge
+        5. Includes practical applications
+
+        Return the lesson as JSON in this format:
+        {{
+            "explanation": "Detailed multi-paragraph explanation",
+            "examples": "Multiple practical examples",
+            "question": "Thought-provoking question to test understanding",
+            "key_points": ["Key point 1", "Key point 2", "Key point 3"]
+        }}
+        """
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(prompt)
+                response_text = clean_json_string(response.text)
+                lesson_content = json.loads(response_text)
                 
-            return lesson_content
-
-        except json.JSONDecodeError:
-            # If JSON parsing fails, create a structured response from the topic content
-            return {
-                "explanation": f"Let's understand {topic.title}:\n\n{topic.content}",
-                "examples": "We'll examine this through practical examples:\n\n" + 
-                           "1. [First relevant example based on the content]\n" +
-                           "2. [Second example showing practical application]",
-                "question": f"Based on our discussion of {topic.title}, explain how [key concept] impacts [relevant aspect].",
-                "key_points": [
-                    "Understanding the core concepts",
-                    "Practical applications",
-                    "Real-world implications"
-                ]
-            }
-            
+                # Validate content
+                required_keys = ["explanation", "examples", "question", "key_points"]
+                if not all(key in lesson_content for key in required_keys):
+                    raise ValueError("Missing required content sections")
+                    
+                # Ensure content is substantial
+                if len(lesson_content["explanation"]) < 50:
+                    raise ValueError("Explanation too short")
+                    
+                return lesson_content
+                
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    st.error(f"Failed to generate teaching content after {max_retries} attempts")
+                    raise
+                time.sleep(1)
+                
     except Exception as e:
-        st.error(f"Error generating content: {str(e)}")
+        st.error(f"Error generating teaching content: {str(e)}")
         return {
-            "explanation": topic.content,
-            "examples": "Let's examine some practical applications.",
-            "question": "What are the key concepts you've learned?",
-            "key_points": ["Core concepts", "Applications", "Implications"]
+            "explanation": f"Let's explore {topic.title}:\n\n{topic.content}",
+            "examples": "Let's look at some practical examples...",
+            "question": "What are your thoughts on these concepts?",
+            "key_points": ["Understanding core concepts", "Practical applications", "Key takeaways"]
         }
-def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
-    prompt = f"""
-    Topic: {topic.title}
-    Student's answer: {answer}
-    Expected points: {', '.join(expected_points)}
-    
-    Return your evaluation as a single JSON object:
-    {{
-        "feedback": "Brief feedback on the answer",
-        "complete_answer": "Thorough explanation of the correct answer",
-        "mastered": false
-    }}
-    
-    Keep your response simple and focused. Do not use special formatting or numbered lists.
-    """
-    
-    try:
-        response = model.generate_content(prompt)
-        response_text = response.parts[0].text
-        cleaned_json = clean_json_string(response_text)
-        
-        try:
-            evaluation = json.loads(cleaned_json)
-            return evaluation
-        except json.JSONDecodeError as e:
-            st.error(f"Failed to parse evaluation JSON: {str(e)}")
-            return {
-                "feedback": "Thank you for your response.",
-                "complete_answer": f"Here's what you should understand about this topic:\n\n{topic.content}",
-                "mastered": False
-            }
-            
-    except Exception as e:
-        st.error(f"Error in evaluation: {str(e)}")
-        return {
-            "feedback": "Thank you for your response.",
-            "complete_answer": f"Let's review the key points:\n\n{topic.content}",
-            "mastered": False
-        }
-
 def main():
     # 1. Page Configuration
     st.set_page_config(
