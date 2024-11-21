@@ -292,18 +292,8 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     """
-    Generate cohesive, well-structured teaching content with improved formatting.
-    
-    Args:
-        topic: Topic object containing the current topic information
-        phase: Current teaching phase
-        conversation_history: List of previous conversation messages
-        model: The AI model instance
-    
-    Returns:
-        dict: Formatted teaching content with explanation, examples, questions, and key points
+    Generate cohesive, well-structured teaching content with enhanced formatting.
     """
-    # Create context from conversation history
     previous_topics = []
     for msg in conversation_history:
         if msg["role"] == "assistant" and "<h2>" in msg["content"]:
@@ -311,45 +301,44 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
             previous_topics.append(topic_title)
 
     prompt = f"""
-    Create a comprehensive, well-structured lesson about: {topic.title}
+    Create a comprehensive lesson about: {topic.title}
     
     Context:
     - Main topic content: {topic.content}
     - Teaching phase: {phase}
     - Previously covered topics: {', '.join(previous_topics) if previous_topics else 'This is the first topic'}
     
-    Create a lesson that:
-    1. Starts with a clear introduction of the concept
-    2. Builds on any previously covered topics
-    3. Uses concrete, relatable examples
-    4. Includes interactive elements
-    5. Leads to practical applications
-    
-    The explanation should:
-    - Break down complex ideas into digestible parts
-    - Use clear, concise language
-    - Include relevant analogies or comparisons
-    - Connect to real-world applications
-    
-    The examples should:
-    - Be specific and detailed
-    - Range from simple to more complex
-    - Connect to practical applications
-    - Include step-by-step explanations where appropriate
-    
-    The question should:
-    - Directly relate to the content just covered
-    - Test understanding of key concepts
-    - Encourage critical thinking
-    - Allow for demonstration of practical application
-    
-    Return the lesson as JSON in this format:
+    Format the response using this exact structure:
     {{
-        "explanation": "Detailed markdown-formatted explanation with proper structure",
-        "examples": "2-3 specific, relevant examples with markdown formatting",
-        "question": "Specific question about the content covered",
-        "key_points": ["3-4 specific key points from this lesson"]
+        "introduction": "A clear 2-3 sentence introduction to the topic",
+        "key_concepts": [
+            {{
+                "title": "Concept Title",
+                "explanation": "Clear explanation",
+                "bullet_points": [
+                    "Key point 1",
+                    "Key point 2"
+                ]
+            }}
+        ],
+        "examples": [
+            {{
+                "title": "Example Title",
+                "scenario": "Detailed example scenario",
+                "steps": [
+                    "Step 1",
+                    "Step 2"
+                ]
+            }}
+        ],
+        "practice_question": "A thought-provoking question about the content",
+        "key_takeaways": [
+            "Key takeaway 1",
+            "Key takeaway 2"
+        ]
     }}
+    
+    Make the content practical and easy to understand.
     """
     
     max_retries = 3
@@ -357,76 +346,58 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
         try:
             response = model.generate_content(prompt)
             response_text = clean_json_string(response.text)
-            lesson_content = json.loads(response_text)
+            content = json.loads(response_text)
             
-            # Validate content
-            required_keys = ["explanation", "examples", "question", "key_points"]
-            if not all(key in lesson_content for key in required_keys):
-                raise ValueError("Missing required content sections")
-            
-            # Format the explanation section
-            explanation_text = lesson_content["explanation"]
-            formatted_explanation = []
-            current_section = []
-            
-            # Split into lines and process each line
-            lines = explanation_text.split('\n')
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                    
-                # Handle section headers
-                if line.startswith('**') and line.endswith('**'):
-                    if current_section:
-                        formatted_explanation.append('\n'.join(current_section))
-                        current_section = []
-                    formatted_explanation.append(f"\n#### {line.strip('*').strip()}")
-                
-                # Handle bullet points
-                elif line.startswith('-'):
-                    current_section.append(f"* {line[1:].strip()}")
-                
-                # Handle regular text
-                else:
-                    current_section.append(line)
-            
-            # Add any remaining section content
-            if current_section:
-                formatted_explanation.append('\n'.join(current_section))
-            
-            # Format examples
-            examples_text = lesson_content["examples"]
-            formatted_examples = []
-            
-            # Split examples and format each one
-            examples = examples_text.split('Example')
-            for i, example in enumerate(examples[1:], 1):  # Skip first empty split
-                formatted_example = f"#### Example {i}\n{example.strip(':**').strip()}"
-                formatted_examples.append(formatted_example)
-            
-            # Combine all formatted content
+            # Format the content with clean markdown
             formatted_content = f"""
 ## {topic.title}
 
 ### 📚 Understanding the Concepts
 
-{'\n\n'.join(formatted_explanation)}
+{content['introduction']}
 
-### 🔍 Practical Applications
+"""
+            # Add key concepts
+            for concept in content['key_concepts']:
+                formatted_content += f"""
+#### {concept['title']}
+{concept['explanation']}
 
-{'\n\n'.join(formatted_examples)}
+"""
+                if concept['bullet_points']:
+                    for point in concept['bullet_points']:
+                        formatted_content += f"* {point}\n"
+                formatted_content += "\n"
 
+            # Add practical applications
+            formatted_content += "\n### 🔍 Practical Applications\n"
+            for i, example in enumerate(content['examples'], 1):
+                formatted_content += f"""
+#### Example {i}: {example['title']}
+{example['scenario']}
+
+Steps:
+"""
+                for step in example['steps']:
+                    formatted_content += f"* {step}\n"
+                formatted_content += "\n"
+
+            # Add understanding check
+            formatted_content += f"""
 ### 💡 Understanding Check
 
-{lesson_content["question"]}
+{content['practice_question']}
+
+Key Takeaways:
 """
+            for takeaway in content['key_takeaways']:
+                formatted_content += f"* {takeaway}\n"
             
             return {
                 "explanation": formatted_content,
-                "examples": '\n\n'.join(formatted_examples),
-                "question": lesson_content["question"],
-                "key_points": lesson_content["key_points"]
+                "examples": content['examples'],
+                "question": content['practice_question'],
+                "key_points": content['key_takeaways']
             }
             
         except Exception as e:
@@ -443,17 +414,25 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
 
 ### 🔍 Practical Applications
 
-Example 1: Basic application of the concept.
+#### Example 1: Basic Application
+* Start with the fundamentals
+* Apply the concept step by step
+* Practice regularly
 
 ### 💡 Understanding Check
 
 Please explain your understanding of {topic.title}.
+
+Key Takeaways:
+* Understand the basic principles
+* Practice regularly
+* Apply concepts systematically
 """,
-                    "examples": "Example 1: Basic application of the concept.",
+                    "examples": [{"title": "Basic Application", "steps": ["Step 1", "Step 2", "Step 3"]}],
                     "question": f"Please explain your understanding of {topic.title}.",
                     "key_points": ["Understanding core concepts", "Practical applications", "Key takeaways"]
                 }
-            time.sleep(1)  # Brief pause before retry
+            time.sleep(1)
 
 
 def main():
