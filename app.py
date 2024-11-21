@@ -348,6 +348,79 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
             "question": "What are your thoughts on these concepts?",
             "key_points": ["Understanding core concepts", "Practical applications", "Key takeaways"]
         }
+def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
+    """
+    Evaluate user's response to a question with improved comprehension and feedback.
+    
+    Args:
+        answer (str): The user's response text
+        expected_points (List[str]): Key points that should be addressed
+        topic (Topic): Current topic being discussed
+        model: The Gemini model instance
+    
+    Returns:
+        dict: Contains feedback, complete answer, and mastery indication
+    """
+    try:
+        prompt = f"""
+        Evaluate this student response about {topic.title}.
+        
+        Topic Content: {topic.content}
+        Student's Answer: {answer}
+        Expected Key Points: {', '.join(expected_points)}
+        
+        Evaluate the response considering:
+        1. Understanding of core concepts
+        2. Coverage of key points
+        3. Practical application
+        4. Clarity of expression
+        
+        Provide constructive feedback that:
+        1. Acknowledges correct points
+        2. Identifies areas for improvement
+        3. Offers specific suggestions
+        4. Maintains an encouraging tone
+        
+        Return your evaluation as JSON in this format:
+        {{
+            "feedback": "Detailed, constructive feedback on the response",
+            "complete_answer": "Comprehensive explanation of the topic",
+            "mastered": boolean value indicating if the response shows mastery
+        }}
+        """
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(prompt)
+                response_text = clean_json_string(response.text)
+                evaluation = json.loads(response_text)
+                
+                # Validate evaluation content
+                required_keys = ["feedback", "complete_answer", "mastered"]
+                if not all(key in evaluation for key in required_keys):
+                    raise ValueError("Missing required evaluation sections")
+                
+                # Ensure feedback is substantial
+                if len(evaluation["feedback"]) < 50:
+                    raise ValueError("Feedback too brief")
+                    
+                return evaluation
+                
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    st.error(f"Failed to generate evaluation after {max_retries} attempts")
+                    raise
+                time.sleep(1)
+                
+    except Exception as e:
+        st.error(f"Error evaluating response: {str(e)}")
+        return {
+            "feedback": "Thank you for your response. Let's review the key concepts.",
+            "complete_answer": f"Here's a comprehensive overview of {topic.title}:\n\n{topic.content}",
+            "mastered": False
+        }
+
 def main():
     # 1. Page Configuration
     st.set_page_config(
