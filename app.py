@@ -1,6 +1,59 @@
 import streamlit as st
 from typing import Dict, List, Any
 import json
+from openai import OpenAI
+import PyPDF2
+import docx
+import io
+
+def clean_json_string(json_str: str) -> str:
+    """Clean and validate JSON string"""
+    # Find the first { and last } to extract valid JSON
+    start = json_str.find('{')
+    end = json_str.rfind('}') + 1
+    if start == -1 or end == 0:
+        raise ValueError("No valid JSON found in string")
+    return json_str[start:end]
+
+def process_uploaded_file(uploaded_file) -> Dict:
+    """Process uploaded file and extract content"""
+    content = {"text": "", "structure": {"sections": []}}
+    
+    try:
+        if uploaded_file.type == "application/pdf":
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
+            content["text"] = " ".join([page.extract_text() for page in pdf_reader.pages])
+            
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(io.BytesIO(uploaded_file.read()))
+            content["text"] = " ".join([paragraph.text for paragraph in doc.paragraphs])
+            
+        elif uploaded_file.type == "text/markdown":
+            content["text"] = uploaded_file.read().decode()
+            
+        else:
+            raise ValueError(f"Unsupported file type: {uploaded_file.type}")
+            
+        # Basic section detection (you can enhance this)
+        paragraphs = content["text"].split("\n\n")
+        current_section = {"title": "Introduction", "content": []}
+        
+        for para in paragraphs:
+            if para.strip().isupper() or para.strip().endswith(":"):
+                if current_section["content"]:
+                    content["structure"]["sections"].append(current_section)
+                current_section = {"title": para.strip(), "content": []}
+            else:
+                current_section["content"].append(para)
+                
+        if current_section["content"]:
+            content["structure"]["sections"].append(current_section)
+            
+        return content
+        
+    except Exception as e:
+        st.error(f"Error processing file: {str(e)}")
+        return {"text": "", "structure": {"sections": []}}
 
 class DynamicTeacher:
     def __init__(self, model):
@@ -37,9 +90,14 @@ class DynamicTeacher:
             }}
             """
 
-            # Get structure
-            response = self.model.generate_content(prompt)
-            structure = json.loads(clean_json_string(response.text))
+            # Get structure from OpenAI
+            response = self.model.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
+            )
+            
+            structure = json.loads(response.choices[0].message.content)
             return structure['topics']
 
         except Exception as e:
@@ -77,8 +135,11 @@ class DynamicTeacher:
             """
 
             # Generate teaching content
-            response = self.model.generate_content(prompt)
-            return response.text
+            response = self.model.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content
 
         except Exception as e:
             st.error(f"Error generating lesson: {str(e)}")
@@ -106,8 +167,12 @@ class DynamicTeacher:
             """
 
             # Get evaluation
-            response = self.model.generate_content(prompt)
-            return json.loads(clean_json_string(response.text))
+            response = self.model.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
+            )
+            return json.loads(response.choices[0].message.content)
 
         except Exception as e:
             st.error(f"Error evaluating response: {str(e)}")
@@ -117,6 +182,29 @@ class DynamicTeacher:
                 "areas_to_review": [],
                 "next_steps": "Please try again."
             }
+
+def initialize_model():
+    """Initialize or get the AI model"""
+    try:
+        # Check if API key is in session state
+        if 'openai_api_key' not in st.session_state:
+            st.session_state.openai_api_key = st.secrets.get('OPENAI_API_KEY', '')
+        
+        if not st.session_state.openai_api_key:
+            st.session_state.openai_api_key = st.text_input(
+                'Enter OpenAI API Key:', 
+                type='password'
+            )
+            if not st.session_state.openai_api_key:
+                st.warning('Please enter your OpenAI API key to continue.')
+                st.stop()
+        
+        # Initialize the model
+        return OpenAI(api_key=st.session_state.openai_api_key)
+    
+    except Exception as e:
+        st.error(f"Error initializing AI model: {str(e)}")
+        st.stop()
 
 def main():
     st.set_page_config(page_title="AI Teaching Assistant", layout="wide")
@@ -128,6 +216,8 @@ def main():
         st.session_state.current_topic = 0
     if 'user_progress' not in st.session_state:
         st.session_state.user_progress = {'understanding_level': 'beginner'}
+    if 'model' not in st.session_state:
+        st.session_state.model = initialize_model()
 
     # Initialize teacher
     teacher = DynamicTeacher(st.session_state.model)
