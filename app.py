@@ -7,48 +7,145 @@ import docx
 import io
 from functools import lru_cache
 
-# Configure page
-st.set_page_config(page_title="AI Teaching Assistant", layout="wide")
+# Configure page with improved layout
+st.set_page_config(
+    page_title="AI Teaching Assistant",
+    page_icon="📚",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Custom CSS for better UI
+# Enhanced CSS for better UI
 st.markdown("""
 <style>
+    /* Main container styling */
     .stApp {
         max-width: 1200px;
         margin: 0 auto;
+        background-color: #f8f9fa;
     }
+    
+    /* Main content area styling */
     .main > div {
         padding: 2rem;
+        background-color: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin: 1rem;
     }
+    
+    /* Button styling */
     .stButton > button {
         width: 100%;
-        border-radius: 5px;
+        border-radius: 8px;
         height: 3em;
         background-color: #4A90E2;
         color: white;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        border: none;
+        margin: 0.5rem 0;
     }
+    
+    .stButton > button:hover {
+        background-color: #357ABD;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    
+    /* Reset button styling */
+    .reset-button > button {
+        background-color: #dc3545;
+    }
+    
+    .reset-button > button:hover {
+        background-color: #c82333;
+    }
+    
+    /* Text area styling */
     .stTextArea > div > div > textarea {
-        border-radius: 5px;
+        border-radius: 8px;
+        border: 2px solid #e9ecef;
+        padding: 0.75rem;
     }
+    
+    /* Upload section styling */
     .upload-section {
         border: 2px dashed #4A90E2;
         border-radius: 10px;
-        padding: 2rem;
+        padding: 3rem;
         margin: 2rem 0;
         text-align: center;
-    }
-    .feedback-box {
         background-color: #f8f9fa;
-        border-left: 4px solid #4A90E2;
-        padding: 1rem;
-        margin: 1rem 0;
-        border-radius: 0 5px 5px 0;
+        transition: all 0.3s ease;
     }
+    
+    .upload-section:hover {
+        border-color: #357ABD;
+        background-color: #e9ecef;
+    }
+    
+    /* Topic header styling */
     .topic-header {
+        background: linear-gradient(135deg, #4A90E2 0%, #357ABD 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .topic-header h2 {
+        margin: 0;
+        color: white;
+    }
+    
+    /* Navigation styling */
+    .nav-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+    
+    /* Sidebar styling */
+    .sidebar .sidebar-content {
         background-color: #f8f9fa;
         padding: 1rem;
+    }
+    
+    /* Progress indicators */
+    .progress-indicator {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
         border-radius: 5px;
-        margin-bottom: 2rem;
+        margin: 0.25rem 0;
+        transition: all 0.3s ease;
+    }
+    
+    .progress-indicator:hover {
+        background-color: #e9ecef;
+    }
+    
+    /* Welcome screen styling */
+    .welcome-screen {
+        text-align: center;
+        padding: 3rem;
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .welcome-screen h1 {
+        color: #4A90E2;
+        margin-bottom: 1.5rem;
+    }
+    
+    /* Loader styling */
+    .stSpinner > div {
+        border-color: #4A90E2;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -63,10 +160,11 @@ def initialize_model():
         if not st.session_state.gemini_api_key:
             st.session_state.gemini_api_key = st.text_input(
                 'Enter Google API Key:', 
-                type='password'
+                type='password',
+                help="Enter your Google API key to access the Gemini model"
             )
             if not st.session_state.gemini_api_key:
-                st.warning('Please enter your Google API key to continue.')
+                st.warning('⚠️ Please enter your Google API key to continue.')
                 return None
         
         # Configure the Gemini API
@@ -76,8 +174,15 @@ def initialize_model():
         return genai.GenerativeModel('gemini-pro')
     
     except Exception as e:
-        st.error(f"Error initializing Gemini model: {str(e)}")
+        st.error(f"❌ Error initializing Gemini model: {str(e)}")
         return None
+
+def reset_application():
+    """Reset the application state"""
+    for key in list(st.session_state.keys()):
+        if key != 'gemini_api_key':  # Preserve API key
+            del st.session_state[key]
+    st.rerun()
 
 def process_text_from_file(file_content, file_type) -> str:
     """Extract text from different file types"""
@@ -101,13 +206,9 @@ def process_text_from_file(file_content, file_type) -> str:
 def process_uploaded_file(uploaded_file) -> Dict:
     """Process uploaded file and extract content"""
     try:
-        # Read file content
         file_content = uploaded_file.read()
-        
-        # Extract text based on file type
         text_content = process_text_from_file(file_content, uploaded_file.type)
         
-        # Create basic structure
         return {
             "text": text_content,
             "structure": {
@@ -115,7 +216,7 @@ def process_uploaded_file(uploaded_file) -> Dict:
             }
         }
     except Exception as e:
-        st.error(f"Error processing file: {str(e)}")
+        st.error(f"❌ Error processing file: {str(e)}")
         return {"text": "", "structure": {"sections": []}}
 
 def create_sections(text: str) -> List[Dict]:
@@ -176,33 +277,24 @@ class DynamicTeacher:
             4. Ensure all JSON keys and values are properly quoted
             """
 
-            # Get response from model
             response = self.model.generate_content(prompt, generation_config={
                 'temperature': 0.3,
                 'top_p': 0.8,
                 'top_k': 40
             })
 
-            # Clean and parse the response
             response_text = response.text.strip()
             
-            # Debug logging
-            st.write("Raw response:", response_text)  # We'll remove this after confirming it works
-            
-            # Try to find JSON in the response
             try:
-                # Find the first { and last }
                 start = response_text.find('{')
                 end = response_text.rfind('}') + 1
                 if start != -1 and end != 0:
                     json_str = response_text[start:end]
                     structure = json.loads(json_str)
                     
-                    # Validate structure
                     if 'topics' not in structure:
                         structure = {'topics': []}
                     
-                    # Ensure each topic has required fields
                     for topic in structure['topics']:
                         topic.setdefault('key_points', [])
                         topic.setdefault('content', '')
@@ -214,8 +306,7 @@ class DynamicTeacher:
                     raise ValueError("No JSON object found in response")
                     
             except json.JSONDecodeError as e:
-                st.error(f"JSON parsing error: {str(e)}")
-                # Attempt to create a basic structure from the response
+                st.error(f"❌ JSON parsing error: {str(e)}")
                 return [{
                     'title': 'Document Overview',
                     'key_points': ['Key points from the document'],
@@ -225,7 +316,7 @@ class DynamicTeacher:
                 }]
 
         except Exception as e:
-            st.error(f"Error analyzing document: {str(e)}")
+            st.error(f"❌ Error analyzing document: {str(e)}")
             return [{
                 'title': 'Document Overview',
                 'key_points': ['Document analysis needs review'],
@@ -266,7 +357,7 @@ class DynamicTeacher:
             return response.text
 
         except Exception as e:
-            st.error(f"Error generating lesson: {str(e)}")
+            st.error(f"❌ Error generating lesson: {str(e)}")
             return "Error generating lesson content."
 
 def main():
@@ -290,9 +381,17 @@ def main():
     # Initialize teacher
     teacher = DynamicTeacher(st.session_state.model)
 
-    # Sidebar navigation
+    # Sidebar navigation and reset button
     with st.sidebar:
         st.title("📚 Learning Progress")
+        
+        # Reset button at the top of sidebar
+        if st.button("🔄 Start New Session", key="reset_button", help="Reset the application and upload a new document"):
+            reset_application()
+        
+        st.divider()
+        
+        # Topic navigation
         if st.session_state.topics:
             for i, topic in enumerate(st.session_state.topics):
                 progress_status = "✅" if i < st.session_state.current_topic else "📍" if i == st.session_state.current_topic else "⭕️"
@@ -303,76 +402,87 @@ def main():
     # Main content area
     if not st.session_state.topics:
         st.markdown("""
-        <div style="text-align: center; padding: 2rem;">
+        <div class="welcome-screen">
             <h1>📚 Welcome to AI Teaching Assistant</h1>
             <p style="font-size: 1.2rem; color: #666; margin: 1rem 0;">
-                Upload your learning material and let AI help you master the content.
+                Transform your documents into interactive learning experiences.
             </p>
+            <div class="upload-section">
+                <p style="color: #4A90E2; font-size: 1.1rem; margin-bottom: 1rem;">
+                    📄 Drop your document here to begin
+                </p>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
         uploaded_file = st.file_uploader(
-            "Upload your document",
+            "",  # Empty label as we have custom HTML above
             type=['pdf', 'docx', 'md'],
             help="Supported formats: PDF, DOCX, MD"
         )
         
         if uploaded_file:
-            with st.spinner("Processing your document..."):
+            with st.spinner("🔄 Processing your document..."):
                 try:
-                    # Process document
                     content = process_uploaded_file(uploaded_file)
                     
                     if content["text"]:
-                        # Analyze content
                         topics = teacher.analyze_document(content)
                         if topics:
                             st.session_state.topics = topics
                             st.rerun()
                         else:
-                            st.error("Could not extract topics from the document. Please try a different document.")
+                            st.error("❌ Could not extract topics from the document. Please try a different document.")
                     else:
-                        st.error("Could not extract text from the document. Please check if the file is readable.")
+                        st.error("❌ Could not extract text from the document. Please check if the file is readable.")
                 except Exception as e:
-                    st.error(f"Error processing document: {str(e)}")
+                    st.error(f"❌ Error processing document: {str(e)}")
 
     else:
         # Display current topic
         current_topic = st.session_state.topics[st.session_state.current_topic]
         
-        # Topic header
+        # Topic header with improved styling
         st.markdown(f"""
         <div class="topic-header">
             <h2>{current_topic['title']}</h2>
-            <p>Topic {st.session_state.current_topic + 1} of {len(st.session_state.topics)}</p>
+            <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">
+                Topic {st.session_state.current_topic + 1} of {len(st.session_state.topics)}
+            </p>
         </div>
         """, unsafe_allow_html=True)
         
         # Generate teaching content
-        with st.spinner("Preparing your lesson..."):
+        with st.spinner("🎓 Preparing your lesson..."):
             teaching_content = teacher.teach_topic(
                 current_topic, 
                 st.session_state.user_progress
             )
         
-        # Display teaching content
+        # Display teaching content in a clean container
+        st.markdown("""
+        <div style="background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        """, unsafe_allow_html=True)
         st.markdown(teaching_content)
+        st.markdown("</div>", unsafe_allow_html=True)
         
-        # Navigation buttons
-        col1, col2 = st.columns(2)
-        with col1:
+        # Navigation buttons with improved layout
+        st.markdown("<br>", unsafe_allow_html=True)  # Add some spacing
+        cols = st.columns([1, 2, 1])  # Create three columns for better button spacing
+        
+        with cols[0]:  # Previous button
             if st.session_state.current_topic > 0:
-                if st.button("⬅️ Previous Topic"):
+                if st.button("⬅️ Previous Topic", key="prev_topic", help="Go to previous topic"):
                     st.session_state.current_topic -= 1
                     st.rerun()
         
-        with col2:
+        with cols[2]:  # Next button
             if st.session_state.current_topic < len(st.session_state.topics) - 1:
-                if st.button("Next Topic ➡️"):
+                if st.button("Next Topic ➡️", key="next_topic", help="Go to next topic"):
                     st.session_state.current_topic += 1
                     st.rerun()
             elif st.session_state.current_topic == len(st.session_state.topics) - 1:
-                st.success("🎉 You've reached the end of the content!")
+                st.success("🎉 Congratulations! You've completed all topics!")
 
 if __name__ == "__main__":
     main()
