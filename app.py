@@ -613,10 +613,15 @@ class TutorialTemplate(ABC):
 
 class TechnicalTemplate(TutorialTemplate):
     def create_tutorial_content(self, topic: Topic, user_performance: float) -> Dict[str, Any]:
-        """Template for content with dynamic handling based on actual document content"""
+        """Template for technical content with dynamic handling based on document content"""
         difficulty = self._adjust_difficulty(user_performance)
         
-        # Create content structure using only the provided topic content
+        # Extract code examples from topic if they exist
+        code_examples = topic.metadata.get('code_examples', [])
+        practice_exercises = topic.metadata.get('practice', [])
+        key_points = topic.metadata.get('key_points', [])
+        
+        # Create a more comprehensive content structure
         content = {
             "content": f"""
 # {topic.title}
@@ -625,41 +630,118 @@ class TechnicalTemplate(TutorialTemplate):
 {topic.content}
 
 ## Learning Objectives 🎯
-{"".join(f"- {point}\n" for point in topic.metadata.get('key_points', []))}
+{"".join(f"- {obj}\n" for obj in self._generate_objectives(topic, difficulty))}
 """
         }
         
-        # Only include sections if they exist in the original content
+        # Add prerequisites section if they exist in the topic metadata
         if topic.metadata.get('prerequisites'):
             content["content"] += f"""
 ## Prerequisites 📚
 {"".join(f"- {prereq}\n" for prereq in topic.metadata['prerequisites'])}
 """
-            
-        if topic.content:
-            content["content"] += f"""
+        
+        # Add detailed explanation
+        content["content"] += f"""
 ## Detailed Explanation 📝
-{topic.content}
+{self._generate_explanation(topic, difficulty)}
 """
-            
-        # Only add practice exercises if they exist in metadata
-        if topic.metadata.get('practice'):
-            content["content"] += "\n## Practice Exercises ✍️\n"
-            for exercise in topic.metadata['practice']:
+        
+        # Add code examples section only if code examples exist in the content
+        if code_examples:
+            content["content"] += "\n## Code Examples 💻\n"
+            for example in code_examples:
                 content["content"] += f"""
-### Practice Task
-{exercise}
+### {example.get('title', 'Example')}
+```{example.get('language', '')}
+{example.get('code', '')}
+```
+"""
+                
+        # Add practice exercises section
+        if practice_exercises:
+            content["content"] += "\n## Practice Exercises ✍️\n"
+            for exercise in practice_exercises:
+                content["content"] += f"""
+### {exercise.get('title', 'Exercise')}
+{exercise.get('description', '')}
 """
 
         return {
             "content": content["content"],
+            "code_examples": code_examples,
+            "practice_exercises": practice_exercises,
             "metadata": {
                 "difficulty": difficulty,
-                "topic_type": topic.content_type,
-                "estimated_time": "30 minutes"  # This could also be dynamic based on content
+                "topic_type": "technical",
+                "estimated_time": self._estimate_time(topic, difficulty)
             }
         }
+
+    def _generate_objectives(self, topic: Topic, difficulty: str) -> List[str]:
+        """Generate learning objectives based on topic content and difficulty"""
+        objectives = []
+        key_points = topic.metadata.get('key_points', [])
         
+        if key_points:
+            # Use existing key points as basis for objectives
+            for point in key_points:
+                if difficulty == "advanced":
+                    objectives.append(f"Master {point}")
+                elif difficulty == "intermediate":
+                    objectives.append(f"Understand and apply {point}")
+                else:
+                    objectives.append(f"Learn basics of {point}")
+        else:
+            # Generate basic objectives from topic title and content
+            objectives = [
+                f"Understand core concepts of {topic.title}",
+                "Apply learned concepts to practical problems",
+                "Develop problem-solving skills in this area"
+            ]
+            
+        return objectives
+
+    def _generate_explanation(self, topic: Topic, difficulty: str) -> str:
+        """Generate detailed explanation based on topic content and difficulty level"""
+        base_explanation = topic.content
+        
+        # Add difficulty-specific additional content if available
+        if difficulty == "advanced" and topic.metadata.get('advanced_content'):
+            return f"""
+{base_explanation}
+
+### Advanced Concepts
+{topic.metadata['advanced_content']}
+"""
+        elif difficulty == "intermediate" and topic.metadata.get('intermediate_content'):
+            return f"""
+{base_explanation}
+
+### Key Concepts
+{topic.metadata['intermediate_content']}
+"""
+        else:
+            return base_explanation
+
+    def _estimate_time(self, topic: Topic, difficulty: str) -> str:
+        """Estimate time needed based on content complexity and difficulty"""
+        base_time = 30  # base time in minutes
+        
+        # Adjust for content length
+        content_length = len(topic.content.split())
+        time_factor = content_length / 500  # adjust time based on content length
+        
+        # Adjust for difficulty
+        difficulty_multiplier = {
+            "beginner": 1,
+            "intermediate": 1.5,
+            "advanced": 2
+        }
+        
+        estimated_time = base_time * time_factor * difficulty_multiplier.get(difficulty, 1)
+        return f"{int(estimated_time)} minutes"
+
     def _adjust_difficulty(self, user_performance: float) -> str:
         """Adjust difficulty based on user performance"""
         if user_performance >= 85:
