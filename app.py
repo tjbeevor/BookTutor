@@ -20,6 +20,21 @@ import os
 load_dotenv()
 
 # Utility functions
+
+def extract_json_from_text(text: str) -> str:
+    """Extract JSON content from text using a more robust approach"""
+    # Find the first { and last } in the text
+    start = text.find('{')
+    end = text.rfind('}')
+    
+    if start == -1 or end == -1:
+        raise ValueError("No JSON structure found in text")
+        
+    # Extract the potential JSON content
+    json_str = text[start:end + 1]
+    return json_str
+
+
 def clean_json_string(text: str) -> str:
     """Clean and extract JSON string from text"""
     json_match = re.search(r'\{[\s\S]*\}', text)
@@ -32,12 +47,30 @@ def clean_json_string(text: str) -> str:
     json_str = re.sub(r'^```json\s*', '', json_str)
     json_str = re.sub(r'\s*```$', '', json_str)
     
-    # Fix common JSON formatting issues
-    json_str = re.sub(r'(?<=\d)"(?=\s*[,}])', '', json_str)  # Remove quotes after numbers
-    json_str = re.sub(r'(?<=true|false)"(?=\s*[,}])', '', json_str)  # Remove quotes after booleans
-    json_str = re.sub(r',\s*}', '}', json_str)  # Remove trailing commas
+    # Fix common JSON formatting issues without using look-behind
+    # Replace quotes after numbers using capture groups
+    json_str = re.sub(r'(\d)"([\s,}])', r'\1\2', json_str)
+    
+    # Replace quotes after booleans using capture groups
+    json_str = re.sub(r'(true|false)"([\s,}])', r'\1\2', json_str)
+    
+    # Remove trailing commas
+    json_str = re.sub(r',\s*}', '}', json_str)
     
     return json_str
+
+def create_fallback_evaluation_json() -> str:
+    """Create a fallback JSON string for when parsing fails"""
+    fallback = {
+        "points_covered": [],
+        "missing_points": [],
+        "misconceptions": [],
+        "understanding_level": 50,
+        "strengths": ["Attempted to answer the question"],
+        "areas_for_improvement": ["Clarity and completeness of response"],
+        "suggestions": ["Please try to be more specific in your answer"]
+    }
+    return json.dumps(fallback)
 
 def is_header_line(line: str) -> bool:
     """Detect if a line is likely a header"""
@@ -956,6 +989,10 @@ class EvaluationEngine:
         }}
         
         The understanding_level should be between 0 and 100.
+        Base your evaluation strictly on how well the response covers the expected key points.
+        List specific strengths and areas for improvement.
+        Provide actionable suggestions for improvement.
+        Return only the JSON object, no additional text.
         """
         
     def _calculate_understanding_level(self, evaluation: Dict[str, Any]) -> float:
