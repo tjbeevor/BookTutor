@@ -146,96 +146,86 @@ def clean_json_string(json_str: str) -> str:
 
 def generate_tutorial_structure(content: str, model) -> List[Topic]:
     """
-    Generate a more robust tutorial structure with improved content organization and hierarchy.
+    Generate a structured tutorial breakdown with focused micro-topics.
     """
     def chunk_content(text: str, max_chunk_size: int = 4000) -> List[str]:
-        words = text.split()
+        paragraphs = text.split('\n\n')
         chunks = []
         current_chunk = []
         current_length = 0
         
-        for word in words:
-            if current_length + len(word) + 1 <= max_chunk_size:
-                current_chunk.append(word)
-                current_length += len(word) + 1
+        for paragraph in paragraphs:
+            if current_length + len(paragraph) + 2 <= max_chunk_size:
+                current_chunk.append(paragraph)
+                current_length += len(paragraph) + 2
             else:
-                chunks.append(' '.join(current_chunk))
-                current_chunk = [word]
-                current_length = len(word)
+                chunks.append('\n\n'.join(current_chunk))
+                current_chunk = [paragraph]
+                current_length = len(paragraph)
                 
         if current_chunk:
-            chunks.append(' '.join(current_chunk))
+            chunks.append('\n\n'.join(current_chunk))
             
         return chunks
 
     try:
-        # Initial analysis prompt to understand document structure
+        # Initial analysis to identify main topics and learning flow
         analysis_prompt = """
         Analyze this educational content and identify:
-        1. The main subject or field being covered
-        2. The natural progression of topics (e.g., fundamentals to advanced)
-        3. Any prerequisites or dependent relationships between concepts
-        4. Key learning objectives
+        1. The main subject area
+        2. Key concepts that need to be taught
+        3. The logical learning sequence
+        4. How to break down complex topics into micro-lessons
         
         Return the analysis in this JSON format:
         {
             "main_subject": "The primary subject area",
-            "learning_objectives": ["objective 1", "objective 2", ...],
-            "topic_dependencies": [
+            "concept_breakdown": [
                 {
-                    "topic": "Topic name",
-                    "prerequisites": ["prerequisite 1", "prerequisite 2"]
+                    "main_concept": "Major topic name",
+                    "micro_lessons": [
+                        {
+                            "title": "Specific micro-lesson title",
+                            "prerequisites": ["required knowledge"],
+                            "learning_outcome": "What learner should understand after this lesson"
+                        }
+                    ]
                 }
             ],
-            "suggested_progression": ["topic 1", "topic 2", ...]
+            "learning_sequence": ["micro-lesson 1", "micro-lesson 2", ...]
         }
         """
         
-        # Get initial analysis for better organization
+        # Get initial content analysis
         response = model.generate_content(analysis_prompt + "\n\nContent:\n" + content[:4000])
         analysis = json.loads(clean_json_string(response.text))
         
-        # Process content in chunks with improved organization
+        # Process content in chunks with improved micro-lesson focus
         chunks = chunk_content(content)
         all_topics = []
         
         for chunk_idx, chunk in enumerate(chunks):
             prompt = f"""
-            Create a structured tutorial outline for the following content.
-            This content is about: {analysis['main_subject']}
-            
-            Key Learning Objectives:
-            {' - ' + '\n - '.join(analysis['learning_objectives'])}
-            
-            Required Topic Progression:
-            {' -> '.join(analysis['suggested_progression'])}
+            Create micro-lessons for this content chunk about {analysis['main_subject']}.
             
             Guidelines:
-            1. Topics must align with the natural learning progression identified above
-            2. Each topic should clearly build upon previous knowledge
-            3. Complex topics should be broken down into prerequisite subtopics
-            4. Content should directly support the learning objectives
-            5. Each topic/subtopic needs 2-3 sentences of explanatory content that:
-               - Explains why this topic is important
-               - Connects it to the broader learning objectives
-               - Highlights relationships with other topics
+            1. Each micro-lesson should focus on ONE specific concept or skill
+            2. Break down complex topics into smaller, manageable pieces
+            3. Ensure logical progression between micro-lessons
+            4. Include clear prerequisites and learning outcomes
+            5. Keep content focused and specific
             
-            Return the structure as valid JSON in this format:
+            Previous micro-lessons generated: {[topic["title"] for topic in all_topics]}
+            
+            Return the structure as valid JSON:
             {{
-                "topics": [
+                "micro_lessons": [
                     {{
-                        "title": "Main Topic Title",
-                        "content": "Clear explanation with context and importance",
-                        "learning_objective": "Which learning objective this supports",
-                        "prerequisites": ["prerequisite topics"],
-                        "subtopics": [
-                            {{
-                                "title": "Subtopic Title",
-                                "content": "Detailed explanation with connections to main topic",
-                                "learning_objective": "Specific learning objective",
-                                "prerequisites": []
-                            }}
-                        ]
+                        "title": "Specific, focused micro-lesson title",
+                        "content": "Clear, concise explanation of the single concept",
+                        "prerequisites": ["specific prerequisite knowledge"],
+                        "learning_outcome": "What learner should understand after this lesson",
+                        "subtopics": [] // Most micro-lessons won't have subtopics
                     }}
                 ]
             }}
@@ -251,11 +241,14 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
                     response_text = clean_json_string(response.text)
                     structure = json.loads(response_text)
                     
-                    if "topics" not in structure or not structure["topics"]:
+                    if "micro_lessons" not in structure or not structure["micro_lessons"]:
                         raise ValueError("Invalid tutorial structure generated")
                     
-                    # Add topics from this chunk
-                    all_topics.extend(structure["topics"])
+                    # Check for duplicates before adding
+                    for lesson in structure["micro_lessons"]:
+                        if not any(similar_titles(existing["title"], lesson["title"]) 
+                                 for existing in all_topics):
+                            all_topics.append(lesson)
                     break
                     
                 except Exception as e:
@@ -264,71 +257,42 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
                         raise
                     time.sleep(1)
 
-        # Enhanced topic organization and merging
-        def organize_topics(topics: List[dict], progression: List[str]) -> List[dict]:
-            # Sort topics based on progression
-            organized = []
-            for prog_topic in progression:
-                for topic in topics:
-                    if similar_titles(topic["title"], prog_topic):
-                        organized.append(topic)
-                        break
-            
-            # Add any remaining topics at the end
-            organized.extend([t for t in topics if not any(similar_titles(t["title"], ot["title"]) for ot in organized)])
-            return organized
-
         def similar_titles(title1: str, title2: str) -> bool:
-            # Enhanced similarity check
+            """Improved similarity check to prevent duplicate topics"""
             title1_words = set(title1.lower().strip().split())
             title2_words = set(title2.lower().strip().split())
-            return (title1_words.issubset(title2_words) or 
-                   title2_words.issubset(title1_words) or
-                   len(title1_words & title2_words) >= min(len(title1_words), len(title2_words)) // 2)
+            
+            # Check for significant overlap
+            common_words = title1_words & title2_words
+            return (len(common_words) >= min(len(title1_words), len(title2_words)) * 0.7)
 
-        # Organize topics based on progression
-        all_topics = organize_topics(all_topics, analysis['suggested_progression'])
+        # Sort topics based on learning sequence
+        def get_sequence_position(topic_title: str) -> int:
+            for i, seq_title in enumerate(analysis['learning_sequence']):
+                if similar_titles(topic_title, seq_title):
+                    return i
+            return len(analysis['learning_sequence'])  # Put unsequenced topics at the end
 
-        # Convert to Topic objects with enhanced organization
-        def create_topics(topic_data: dict, parent: Optional[Topic] = None) -> Topic:
+        all_topics.sort(key=lambda x: get_sequence_position(x["title"]))
+
+        # Convert to Topic objects
+        def create_topic(topic_data: dict, parent: Optional[Topic] = None) -> Topic:
             topic = Topic(
                 title=topic_data["title"],
-                content=topic_data.get("content", ""),
+                content=f"Learning Outcome: {topic_data['learning_outcome']}\n\n{topic_data['content']}",
                 subtopics=[],
                 completed=False,
                 parent=parent
             )
             
-            # Sort subtopics based on prerequisites
-            subtopics_data = topic_data.get("subtopics", [])
-            prereq_map = {st["title"]: st.get("prerequisites", []) for st in subtopics_data}
-            
-            # Topological sort for subtopics
-            sorted_subtopics = []
-            visited = set()
-            
-            def visit(subtopic):
-                if subtopic["title"] in visited:
-                    return
-                visited.add(subtopic["title"])
-                for prereq in prereq_map[subtopic["title"]]:
-                    for st in subtopics_data:
-                        if similar_titles(st["title"], prereq):
-                            visit(st)
-                sorted_subtopics.append(subtopic)
-            
-            for subtopic in subtopics_data:
-                if subtopic["title"] not in visited:
-                    visit(subtopic)
-            
-            # Create subtopics in proper order
-            for subtopic_data in sorted_subtopics:
-                subtopic = create_topics(subtopic_data, topic)
+            # Most micro-lessons won't have subtopics
+            for subtopic_data in topic_data.get("subtopics", []):
+                subtopic = create_topic(subtopic_data, topic)
                 topic.subtopics.append(subtopic)
                 
             return topic
 
-        final_topics = [create_topics(t) for t in all_topics]
+        final_topics = [create_topic(t) for t in all_topics]
         
         if not final_topics:
             raise ValueError("No valid topics could be generated from the content")
@@ -341,8 +305,7 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     """
-    Generate cohesive, well-structured teaching content with improved formatting.
-    Maintains original logic while fixing JSON generation.
+    Generate focused micro-learning content with clear progression and validation points.
     """
     # Create context from conversation history
     previous_topics = []
@@ -351,61 +314,35 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
             topic_title = msg["content"].split("<h2>")[1].split("</h2>")[0]
             previous_topics.append(topic_title)
 
-    # Keep original prompt structure but ensure JSON formatting
     prompt = f"""
-    Create a comprehensive, well-structured lesson about: {topic.title}
+    Create a focused micro-lesson about: {topic.title}
+    Previous topics covered: {', '.join(previous_topics) if previous_topics else 'This is the first topic'}
     
-    Context:
-    - Main topic content: {topic.content}
-    - Teaching phase: {phase}
-    - Previously covered topics: {', '.join(previous_topics) if previous_topics else 'This is the first topic'}
+    Guidelines:
+    1. Focus on ONE specific concept or skill
+    2. Content should be concise but thorough
+    3. Use clear, simple language
+    4. Include only the most relevant examples
+    5. Ask focused questions that test understanding of the specific concept
     
-    Create a lesson that:
-    1. Starts with a clear introduction of the concept
-    2. Builds on any previously covered topics
-    3. Uses concrete, relatable examples
-    4. Includes interactive elements
-    5. Leads to practical applications
-    
-    The explanation should:
-    - Break down complex ideas into digestible parts
-    - Use clear, concise language
-    - Include relevant analogies or comparisons
-    - Connect to real-world applications
-    
-    The examples should:
-    - Be specific and detailed
-    - Range from simple to more complex
-    - Connect to practical applications
-    - Include step-by-step explanations
-    
-    The question should:
-    - Directly relate to the content covered
-    - Test understanding of key concepts
-    - Encourage critical thinking
-    - Allow for demonstration of practical application
-    
-    Return a valid JSON object in this exact format:
+    Return a JSON object with this exact structure:
     {{
-        "explanation": {{
-            "introduction": "2-3 sentences introducing the main concept",
-            "sections": [
-                {{
-                    "title": "Section Title",
-                    "content": "Main content of the section",
-                    "bullets": ["point 1", "point 2", "point 3"]
-                }}
-            ]
-        }},
-        "examples": [
-            {{
-                "title": "Example Title",
-                "scenario": "Scenario description",
-                "steps": ["step 1", "step 2", "step 3"]
+        "micro_lesson": {{
+            "concept": {{
+                "title": "Clear, specific concept title",
+                "key_point": "One main point to remember",
+                "explanation": "2-3 clear sentences explaining the concept"
+            }},
+            "practical_example": {{
+                "scenario": "A single, clear real-world example",
+                "steps": ["Step 1", "Step 2", "Step 3"],
+                "key_consideration": "One important thing to remember"
+            }},
+            "understanding_check": {{
+                "question": "A specific question testing understanding of this concept",
+                "expected_elements": ["Point 1", "Point 2", "Point 3"]
             }}
-        ],
-        "question": "A specific question to test understanding",
-        "key_points": ["key point 1", "key point 2", "key point 3"]
+        }}
     }}
     """
     
@@ -416,87 +353,52 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
             response_text = clean_json_string(response.text)
             content = json.loads(response_text)
             
-            # Format the content with clear structure and spacing
-            formatted_content = f"""## {topic.title}
+            # Format the content with clear visual separation
+            formatted_content = f"""## {content['micro_lesson']['concept']['title']}
 
-### 📚 Understanding the Concepts
+### 📚 Key Concept
+{content['micro_lesson']['concept']['explanation']}
 
-{content['explanation']['introduction']}
+**Remember:** {content['micro_lesson']['concept']['key_point']}
 
-"""
-            # Add sections
-            for section in content['explanation']['sections']:
-                formatted_content += f"""#### {section['title']}
-{section['content']}
-
-"""
-                if section['bullets']:
-                    for bullet in section['bullets']:
-                        formatted_content += f"* {bullet}\n"
-                formatted_content += "\n"
-
-            # Add examples
-            formatted_content += "### 🔍 Practical Applications\n\n"
-            for i, example in enumerate(content['examples'], 1):
-                formatted_content += f"""#### Example {i}: {example['title']}
-{example['scenario']}
+### 🔍 Real-World Example
+{content['micro_lesson']['practical_example']['scenario']}
 
 Steps:
 """
-                for step in example['steps']:
-                    formatted_content += f"* {step}\n"
-                formatted_content += "\n"
-
-            # Add understanding check
-            formatted_content += f"""### 💡 Understanding Check
-
-{content['question']}
-
-#### Key Points:
-"""
-            for point in content['key_points']:
-                formatted_content += f"* {point}\n"
+            for step in content['micro_lesson']['practical_example']['steps']:
+                formatted_content += f"* {step}\n"
+                
+            formatted_content += f"\n**Important:** {content['micro_lesson']['practical_example']['key_consideration']}\n\n"
+            
+            formatted_content += f"""### 💡 Check Your Understanding
+{content['micro_lesson']['understanding_check']['question']}"""
             
             return {
                 "explanation": formatted_content,
-                "examples": content['examples'],
-                "question": content['question'],
-                "key_points": content['key_points']
+                "expected_points": content['micro_lesson']['understanding_check']['expected_elements'],
+                "question": content['micro_lesson']['understanding_check']['question']
             }
             
         except Exception as e:
             if attempt == max_retries - 1:
                 st.error(f"Failed to generate teaching content after {max_retries} attempts: {str(e)}")
-                # Return a basic formatted version if all attempts fail
                 return {
                     "explanation": f"""## {topic.title}
 
-### 📚 Understanding the Concepts
-
+### 📚 Key Concept
 {topic.content}
 
-### 🔍 Practical Applications
+### 🔍 Real-World Example
+Practice applying this concept in a simple scenario.
 
-#### Example 1: Basic Application
-* Follow the fundamental steps
-* Practice the technique
-* Monitor results
-
-### 💡 Understanding Check
-
-Please explain your understanding of {topic.title}.
-
-#### Key Points:
-* Understand the basic principles
-* Practice regularly
-* Apply concepts systematically
+### 💡 Check Your Understanding
+Can you explain the key points of {topic.title}?
 """,
-                    "examples": [{"title": "Basic Application", "steps": ["Step 1", "Step 2", "Step 3"]}],
-                    "question": f"Please explain your understanding of {topic.title}.",
-                    "key_points": ["Understanding core concepts", "Practical applications", "Key takeaways"]
+                    "expected_points": ["Understanding of basic concept", "Application of concept", "Key considerations"],
+                    "question": f"Can you explain the key points of {topic.title}?"
                 }
             time.sleep(1)
-
 def evaluate_response(user_response: str, expected_points: List[str], current_topic: Topic, model) -> dict:
     """
     Evaluate user's response against expected learning points.
