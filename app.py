@@ -8,7 +8,7 @@ import io
 import json
 import time
 import random
-from typing import Dict, List, Optional, Any, BinaryIO
+from typing import Dict, List, Optional, Any, BinaryIO, Union
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from pathlib import Path
