@@ -35,152 +35,144 @@ class EnhancedTeacher:
         self.model = model
 
     def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
-        """Enhanced document analysis with proper Gemini response handling"""
-        try:
-            text_content = content['text']
-            sections = self._split_into_chunks(text_content)
-            all_topics = []
-            
-            for section in sections:
-                prompt = f"""
-                You are an expert curriculum designer. Create a detailed learning module from this content. 
-                Focus on extracting meaningful educational content while preserving the original material's structure.
+    """Enhanced document analysis with improved prompt engineering"""
+    try:
+        text_content = content['text']
+        sections = self._split_into_chunks(text_content)
+        all_topics = []
+        
+        for section in sections:
+            prompt = """You are an expert curriculum designer. Create a detailed learning module from the provided content.
+Your response must be a valid JSON object with no trailing commas, following this EXACT structure:
+
+{
+  "title": "Specific topic title",
+  "learning_objectives": [
+    "First learning objective",
+    "Second learning objective"
+  ],
+  "key_points": [
+    "First key point",
+    "Second key point"
+  ],
+  "content": "Main educational content",
+  "practical_exercises": [
+    "First exercise",
+    "Second exercise"
+  ],
+  "knowledge_check": {
+    "questions": [
+      {
+        "question": "Sample question?",
+        "options": [
+          "First option",
+          "Second option",
+          "Third option",
+          "Fourth option"
+        ],
+        "correct_answer": "First option",
+        "explanation": "Explanation of the correct answer"
+      }
+    ]
+  },
+  "difficulty": "beginner",
+  "estimated_time": "30 minutes"
+}
+
+Content to analyze:
+"""
+            # Add the section content with clear delimiter
+            prompt += f"\n\n{section[:4000]}\n\nRespond ONLY with the JSON structure, no additional text or explanations."
+
+            try:
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config={
+                        'temperature': 0.1,  # Lower temperature for more consistent output
+                        'top_p': 0.95,
+                        'top_k': 40,
+                    }
+                )
                 
-                IMPORTANT: Ensure your response is valid JSON with no trailing commas or formatting errors.
-                
-                Content to analyze:
-                {section[:4000]}
-
-                Respond with ONLY the following JSON structure:
-                {{
-                    "title": "Clear and specific section title",
-                    "learning_objectives": [
-                        "Specific learning objective 1",
-                        "Specific learning objective 2"
-                    ],
-                    "key_points": [
-                        "Key concept 1",
-                        "Key concept 2"
-                    ],
-                    "content": "Detailed educational content from the source material",
-                    "practical_exercises": [
-                        "Specific exercise 1",
-                        "Specific exercise 2"
-                    ],
-                    "knowledge_check": {{
-                        "questions": [
-                            {{
-                                "question": "Specific question about the content?",
-                                "options": [
-                                    "Option A",
-                                    "Option B",
-                                    "Option C",
-                                    "Option D"
-                                ],
-                                "correct_answer": "Option A",
-                                "explanation": "Why this answer is correct"
-                            }}
-                        ]
-                    }},
-                    "difficulty": "beginner",
-                    "estimated_time": "30 minutes"
-                }}"""
-
-                try:
-                    response = self.model.generate_content(
-                        prompt,
-                        generation_config={
-                            'temperature': 0.3,
-                            'top_p': 0.8,
-                            'top_k': 40
-                        }
-                    )
-                    
-                    # Properly handle Gemini response
-                    if response.candidates and response.candidates[0].content.parts:
-                        response_text = response.candidates[0].content.parts[0].text
-                    else:
-                        st.warning("Empty response from model")
-                        continue
-
-                    # Clean and parse response with improved error handling
+                # Properly handle Gemini response
+                if response.candidates and response.candidates[0].content.parts:
+                    response_text = response.candidates[0].content.parts[0].text
+                    # Clean the response text more aggressively
                     response_text = self._clean_json_text(response_text)
+                    
                     try:
                         topic = json.loads(response_text)
-                    except json.JSONDecodeError:
-                        st.warning(f"Failed to parse section response. Using fallback structure.")
-                        topic = self._create_fallback_structure(section[:1000])
+                        if self._validate_topic(topic):
+                            topic = self._enhance_topic(topic, section)
+                            all_topics.append(topic)
+                            continue
+                    except json.JSONDecodeError as e:
+                        st.warning(f"JSON parsing error: {str(e)}")
+                
+                # If we get here, either the response was empty or parsing failed
+                st.warning("Using fallback structure for this section")
+                fallback = self._create_fallback_structure(section[:1000])
+                all_topics.append(fallback)
 
-                    if self._validate_topic(topic):
-                        topic = self._enhance_topic(topic, section)
-                        all_topics.append(topic)
-                    else:
-                        fallback = self._create_fallback_structure(section[:1000])
-                        all_topics.append(fallback)
-                        st.warning(f"Using fallback structure for section due to validation failure")
+            except Exception as e:
+                st.warning(f"Processing error for section: {str(e)}")
+                fallback = self._create_fallback_structure(section[:1000])
+                all_topics.append(fallback)
+                continue
 
-                except Exception as e:
-                    st.warning(f"Processing error for section: {str(e)}")
-                    fallback = self._create_fallback_structure(section[:1000])
-                    all_topics.append(fallback)
-                    continue
+        # Post-process all topics to ensure coherent flow
+        processed_topics = self._post_process_topics(all_topics) if all_topics else [self._create_fallback_structure(text_content)]
+        return processed_topics
 
-            # Post-process all topics to ensure coherent flow
-            processed_topics = self._post_process_topics(all_topics) if all_topics else [self._create_fallback_structure(text_content)]
-            return processed_topics
-
-        except Exception as e:
-            st.error(f"Error in document analysis: {str(e)}")
-            return [self._create_fallback_structure(text_content)]
+    except Exception as e:
+        st.error(f"Error in document analysis: {str(e)}")
+        return [self._create_fallback_structure(text_content)]
 
     def _clean_json_text(self, text: str) -> str:
-        """Clean and fix common JSON formatting issues"""
-        try:
-            # Remove any markdown code block markers and extra whitespace
-            text = text.replace('```json', '').replace('```', '')
-            text = text.strip()
-            
-            # Find the first '{' and last '}'
-            start = text.find('{')
-            end = text.rfind('}')
-            
-            if start != -1 and end != -1:
-                text = text[start:end+1]
-                
-            # Fix common JSON formatting issues
-            text = text.replace('\\"', '"')  # Fix escaped quotes
-            text = text.replace('\n', ' ')   # Remove newlines
-            text = ' '.join(text.split())    # Normalize spacing
-            
-            # Validate JSON structure before returning
-            json.loads(text)  # Test if it's valid JSON
-            return text
-            
-        except json.JSONDecodeError as e:
-            # If JSON is invalid, try to fix common issues
-            try:
-                # Replace single quotes with double quotes
-                text = text.replace("'", '"')
-                
-                # Fix missing quotes around property names
-                import re
-                text = re.sub(r'(\s*{?\s*)(\w+)(\s*:)', r'\1"\2"\3', text)
-                
-                # Fix trailing commas in arrays and objects
-                text = re.sub(r',(\s*[}\]])', r'\1', text)
-                
-                # Validate the fixed JSON
-                json.loads(text)
-                return text
-                
-            except Exception:
-                # If all fixes fail, create a minimal valid JSON structure
-                st.warning(f"Failed to parse JSON response. Creating fallback structure.")
-                return json.dumps(self._create_fallback_structure("Content parsing error"))
-
-        except Exception as e:
-            st.error(f"Error cleaning JSON text: {str(e)}")
-            return json.dumps(self._create_fallback_structure("Content parsing error"))
+    """More aggressive JSON text cleaning"""
+    try:
+        # Remove any markdown code block markers and extra whitespace
+        text = text.replace('```json', '').replace('```', '')
+        text = text.strip()
+        
+        # Find the first '{' and last '}'
+        start = text.find('{')
+        end = text.rfind('}')
+        
+        if start != -1 and end != -1:
+            text = text[start:end+1]
+        
+        # More aggressive cleaning
+        text = text.replace('\\"', '"')  # Fix escaped quotes
+        text = text.replace('\n', ' ')   # Remove newlines
+        text = text.replace('\\n', ' ')  # Remove escaped newlines
+        text = text.replace('\\', '')    # Remove remaining backslashes
+        text = ' '.join(text.split())    # Normalize spacing
+        
+        # Fix common JSON formatting issues
+        text = text.replace('"{', '{')   # Fix escaped objects
+        text = text.replace('}"', '}')   # Fix escaped objects
+        text = text.replace(',}', '}')   # Remove trailing commas
+        text = text.replace(',]', ']')   # Remove trailing commas
+        
+        # Replace single quotes with double quotes
+        text = text.replace("'", '"')
+        
+        # Fix missing quotes around property names
+        import re
+        text = re.sub(r'(\s*{?\s*)(\w+)(\s*:)', r'\1"\2"\3', text)
+        
+        # Validate JSON structure before returning
+        json.loads(text)  # Test if it's valid JSON
+        return text
+        
+    except json.JSONDecodeError:
+        # Create a minimal valid JSON structure
+        return json.dumps(self._create_fallback_structure("Content parsing error"))
+    
+    except Exception as e:
+        st.error(f"Error cleaning JSON text: {str(e)}")
+        return json.dumps(self._create_fallback_structure("Content parsing error"))
 
     def _split_into_chunks(self, text: str) -> List[str]:
         """Split content into logical sections"""
