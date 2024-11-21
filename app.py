@@ -486,7 +486,7 @@ def main():
             </p>
             <div class="upload-section">
                 <p style="color: #4A90E2; font-size: 1.1rem; margin-bottom: 1rem;">
-                    📄 Drop your document here to begin
+                    📄 Upload you document to begin
                 </p>
             </div>
         </div>
