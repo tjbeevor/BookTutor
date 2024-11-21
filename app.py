@@ -18,14 +18,12 @@ st.set_page_config(
 # Enhanced CSS for better UI
 st.markdown("""
 <style>
-    /* Main container styling */
     .stApp {
         max-width: 1200px;
         margin: 0 auto;
         background-color: #f8f9fa;
     }
     
-    /* Main content area styling */
     .main > div {
         padding: 2rem;
         background-color: white;
@@ -34,126 +32,57 @@ st.markdown("""
         margin: 1rem;
     }
     
-    /* Button styling */
-    .stButton > button {
-        width: 100%;
-        border-radius: 8px;
-        height: 3em;
-        background-color: #4A90E2;
-        color: white;
-        font-weight: 500;
-        transition: all 0.3s ease;
-        border: none;
-        margin: 0.5rem 0;
-    }
-    
-    .stButton > button:hover {
-        background-color: #357ABD;
-        transform: translateY(-1px);
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
-    
-    /* Reset button styling */
-    .reset-button > button {
-        background-color: #dc3545;
-    }
-    
-    .reset-button > button:hover {
-        background-color: #c82333;
-    }
-    
-    /* Text area styling */
-    .stTextArea > div > div > textarea {
-        border-radius: 8px;
-        border: 2px solid #e9ecef;
-        padding: 0.75rem;
-    }
-    
-    /* Upload section styling */
-    .upload-section {
-        border: 2px dashed #4A90E2;
-        border-radius: 10px;
-        padding: 3rem;
-        margin: 2rem 0;
-        text-align: center;
-        background-color: #f8f9fa;
-        transition: all 0.3s ease;
-    }
-    
-    .upload-section:hover {
-        border-color: #357ABD;
-        background-color: #e9ecef;
-    }
-    
-    /* Topic header styling */
-    .topic-header {
-        background: linear-gradient(135deg, #4A90E2 0%, #357ABD 100%);
-        color: white;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin-bottom: 2rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    .topic-header h2 {
-        margin: 0;
-        color: white;
-    }
-    
-    /* Navigation styling */
-    .nav-button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-    }
-    
-    /* Sidebar styling */
-    .sidebar .sidebar-content {
-        background-color: #f8f9fa;
-        padding: 1rem;
-    }
-    
-    /* Progress indicators */
-    .progress-indicator {
+    .chapter-navigation {
         display: flex;
+        justify-content: space-between;
         align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem;
-        border-radius: 5px;
-        margin: 0.25rem 0;
-        transition: all 0.3s ease;
+        padding: 1rem;
+        background-color: #fff;
+        border-radius: 8px;
+        margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    
-    .progress-indicator:hover {
+
+    .learning-objectives {
+        background-color: #f0f7ff;
+        padding: 1rem;
+        border-left: 4px solid #4A90E2;
+        margin: 1rem 0;
+    }
+
+    .knowledge-check {
+        background-color: #fff3e0;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+
+    .practical-exercise {
+        background-color: #e8f5e9;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+
+    .progress-indicator {
+        height: 8px;
         background-color: #e9ecef;
+        border-radius: 4px;
+        margin: 1rem 0;
     }
-    
-    /* Welcome screen styling */
-    .welcome-screen {
-        text-align: center;
-        padding: 3rem;
-        background: white;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    .welcome-screen h1 {
-        color: #4A90E2;
-        margin-bottom: 1.5rem;
-    }
-    
-    /* Loader styling */
-    .stSpinner > div {
-        border-color: #4A90E2;
+
+    .progress-bar {
+        height: 100%;
+        background-color: #4A90E2;
+        border-radius: 4px;
+        transition: width 0.3s ease;
     }
 </style>
 """, unsafe_allow_html=True)
 
 def initialize_model():
-    """Initialize or get the Google Gemini model"""
+    """Initialize or get the Google Gemini model with enhanced error handling"""
     try:
-        # Check if API key is in session state
         if 'gemini_api_key' not in st.session_state:
             st.session_state.gemini_api_key = st.secrets.get('GOOGLE_API_KEY', '')
         
@@ -167,190 +96,160 @@ def initialize_model():
                 st.warning('⚠️ Please enter your Google API key to continue.')
                 return None
         
-        # Configure the Gemini API
         genai.configure(api_key=st.session_state.gemini_api_key)
-        
-        # Initialize the model
         return genai.GenerativeModel('gemini-pro')
     
     except Exception as e:
         st.error(f"❌ Error initializing Gemini model: {str(e)}")
         return None
 
-def reset_application():
-    """Reset the application state"""
-    for key in list(st.session_state.keys()):
-        if key != 'gemini_api_key':  # Preserve API key
-            del st.session_state[key]
-    st.rerun()
-
 def process_text_from_file(file_content, file_type) -> str:
-    """Extract text from different file types"""
+    """Enhanced file processing with better error handling and support for more formats"""
     try:
         if file_type == "application/pdf":
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
-            return " ".join(page.extract_text() for page in pdf_reader.pages)
+            text = " ".join(page.extract_text() for page in pdf_reader.pages)
             
         elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = docx.Document(io.BytesIO(file_content))
-            return " ".join(paragraph.text for paragraph in doc.paragraphs)
+            text = " ".join(paragraph.text for paragraph in doc.paragraphs)
             
         elif file_type == "text/markdown":
-            return file_content.decode()
-            
+            text = file_content.decode()
+        
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
+        
+        # Clean and preprocess text
+        text = clean_text(text)
+        return text
     except Exception as e:
         raise Exception(f"Error processing file content: {str(e)}")
 
-def process_uploaded_file(uploaded_file) -> Dict:
-    """Process uploaded file and extract content"""
-    try:
-        file_content = uploaded_file.read()
-        text_content = process_text_from_file(file_content, uploaded_file.type)
-        
-        return {
-            "text": text_content,
-            "structure": {
-                "sections": create_sections(text_content)
-            }
-        }
-    except Exception as e:
-        st.error(f"❌ Error processing file: {str(e)}")
-        return {"text": "", "structure": {"sections": []}}
+def clean_text(text: str) -> str:
+    """Clean and preprocess text content"""
+    # Remove excessive whitespace
+    text = ' '.join(text.split())
+    # Basic normalization
+    text = text.replace('\n\n', '\n').strip()
+    return text
 
-def create_sections(text: str) -> List[Dict]:
-    """Create sections from text content"""
-    sections = []
-    current_section = {"title": "Introduction", "content": []}
-    
-    for paragraph in text.split('\n\n'):
-        paragraph = paragraph.strip()
-        if not paragraph:
-            continue
-            
-        if paragraph.isupper() or paragraph.endswith(':'):
-            if current_section["content"]:
-                sections.append(dict(current_section))
-            current_section = {"title": paragraph, "content": []}
-        else:
-            current_section["content"].append(paragraph)
-    
-    if current_section["content"]:
-        sections.append(dict(current_section))
-    
-    return sections
-
-class DynamicTeacher:
+class EnhancedTeacher:
     def __init__(self, model):
         self.model = model
 
     def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
-        """Initial document analysis to create learning structure"""
+        """Enhanced document analysis with comprehensive learning structure"""
         try:
             text_content = content['text']
             
             prompt = f"""
-            You are a helpful teaching assistant. Your task is to analyze the following educational content and create a learning structure.
-            
+            You are an expert curriculum designer and instructor. Analyze this educational content
+            and create a comprehensive learning structure:
+
             Content to analyze:
             {text_content[:2000]}...
 
-            Instructions:
-            Create a learning structure with clear topics and key points. You must respond with ONLY a JSON object in the following format:
+            Create a structured curriculum that includes:
+            1. Clear learning objectives for each section
+            2. Key concepts and principles
+            3. Practical exercises and examples
+            4. Knowledge check questions
+            5. Real-world applications
+            6. Additional resources and tips
+
+            Format as JSON:
             {{
                 "topics": [
                     {{
                         "title": "Topic title",
+                        "learning_objectives": ["objective 1", "objective 2"],
                         "key_points": ["point 1", "point 2"],
-                        "content": "Relevant content from the document",
-                        "teaching_style": "conceptual",
+                        "practical_exercises": ["exercise 1", "exercise 2"],
+                        "knowledge_check": {{
+                            "questions": [
+                                {{
+                                    "question": "Question text",
+                                    "options": ["option 1", "option 2", "option 3", "option 4"],
+                                    "correct_answer": "Correct option",
+                                    "explanation": "Why this is correct"
+                                }}
+                            ]
+                        }},
+                        "real_world_applications": ["application 1", "application 2"],
+                        "additional_resources": ["resource 1", "resource 2"],
+                        "content": "Main content text",
+                        "estimated_time": "30 minutes",
                         "difficulty": "beginner"
                     }}
                 ]
             }}
-
-            Remember:
-            1. Response must be valid JSON
-            2. Do not include any other text or explanations
-            3. Only include the JSON structure
-            4. Ensure all JSON keys and values are properly quoted
             """
 
-            response = self.model.generate_content(prompt, generation_config={
-                'temperature': 0.3,
-                'top_p': 0.8,
-                'top_k': 40
-            })
-
-            response_text = response.text.strip()
+            response = self.model.generate_content(prompt)
             
             try:
-                start = response_text.find('{')
-                end = response_text.rfind('}') + 1
-                if start != -1 and end != 0:
-                    json_str = response_text[start:end]
-                    structure = json.loads(json_str)
-                    
-                    if 'topics' not in structure:
-                        structure = {'topics': []}
-                    
-                    for topic in structure['topics']:
-                        topic.setdefault('key_points', [])
-                        topic.setdefault('content', '')
-                        topic.setdefault('teaching_style', 'conceptual')
-                        topic.setdefault('difficulty', 'beginner')
-                    
-                    return structure['topics']
-                else:
-                    raise ValueError("No JSON object found in response")
-                    
+                json_str = self._extract_json(response.text)
+                structure = json.loads(json_str)
+                
+                # Validate and process the structure
+                if 'topics' not in structure:
+                    structure = {'topics': []}
+                
+                return structure['topics']
+                
             except json.JSONDecodeError as e:
-                st.error(f"❌ JSON parsing error: {str(e)}")
-                return [{
-                    'title': 'Document Overview',
-                    'key_points': ['Key points from the document'],
-                    'content': text_content[:1000],
-                    'teaching_style': 'conceptual',
-                    'difficulty': 'beginner'
-                }]
+                st.error(f"❌ Error parsing curriculum structure: {str(e)}")
+                return self._create_fallback_structure(text_content)
 
         except Exception as e:
             st.error(f"❌ Error analyzing document: {str(e)}")
-            return [{
-                'title': 'Document Overview',
-                'key_points': ['Document analysis needs review'],
-                'content': text_content[:1000] if text_content else 'Content unavailable',
-                'teaching_style': 'conceptual',
-                'difficulty': 'beginner'
-            }]
+            return self._create_fallback_structure(text_content)
+
+    def _extract_json(self, text: str) -> str:
+        """Extract JSON content from text"""
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1 and end != 0:
+            return text[start:end]
+        raise ValueError("No JSON object found in response")
+
+    def _create_fallback_structure(self, content: str) -> List[Dict]:
+        """Create a basic structure when full analysis fails"""
+        return [{
+            'title': 'Document Overview',
+            'learning_objectives': ['Understand the main concepts'],
+            'key_points': ['Key concepts from the document'],
+            'content': content[:1000],
+            'difficulty': 'beginner',
+            'estimated_time': '15 minutes'
+        }]
 
     def teach_topic(self, topic: Dict, user_progress: Dict) -> str:
-        """Dynamically generate teaching content"""
+        """Generate engaging, interactive lesson content"""
         try:
             prompt = f"""
-            Act as an expert teacher teaching this topic: {topic['title']}
+            Create an engaging lesson for topic: {topic['title']}
 
-            Key points to cover:
-            {json.dumps(topic['key_points'], indent=2)}
+            Learning objectives:
+            {json.dumps(topic.get('learning_objectives', []), indent=2)}
 
-            Content to teach from:
-            {topic['content']}
+            Key points:
+            {json.dumps(topic.get('key_points', []), indent=2)}
 
-            Teaching context:
-            - Teaching style: {topic['teaching_style']}
-            - Difficulty level: {topic['difficulty']}
-            - Student progress: {user_progress.get('understanding_level', 'beginner')}
+            Student context:
+            - Current level: {user_progress.get('understanding_level', 'beginner')}
+            - Previous topics completed: {len(user_progress.get('completed_topics', []))}
 
-            Create an engaging lesson that:
-            1. Introduces the topic clearly
-            2. Explains concepts with examples
-            3. Uses analogies when helpful
-            4. Provides clear explanations of key points
+            Create an interactive lesson that:
+            1. Starts with a hook or engaging question
+            2. Explains concepts clearly with examples
+            3. Includes practical exercises
+            4. Provides knowledge check points
+            5. Connects to real-world applications
+            6. Ends with a summary and next steps
 
-            Format your response as a clear lesson with markdown formatting.
-            Include emoji for visual engagement 📚
-            Make it conversational and encouraging 🎯
+            Format your response in markdown with clear sections and engaging emoji.
             """
 
             response = self.model.generate_content(prompt)
@@ -367,7 +266,11 @@ def main():
     if 'current_topic' not in st.session_state:
         st.session_state.current_topic = 0
     if 'user_progress' not in st.session_state:
-        st.session_state.user_progress = {'understanding_level': 'beginner'}
+        st.session_state.user_progress = {
+            'understanding_level': 'beginner',
+            'completed_topics': [],
+            'quiz_scores': {}
+        }
     
     # Initialize model
     model = initialize_model()
@@ -375,23 +278,21 @@ def main():
         st.stop()
         return
 
-    # Store model in session state
-    st.session_state.model = model
-
     # Initialize teacher
-    teacher = DynamicTeacher(st.session_state.model)
+    teacher = EnhancedTeacher(model)
 
-    # Sidebar navigation and reset button
+    # Sidebar navigation and progress
     with st.sidebar:
         st.title("📚 Learning Progress")
         
-        # Reset button at the top of sidebar
-        if st.button("🔄 Start New Session", key="reset_button", help="Reset the application and upload a new document"):
-            reset_application()
+        if st.button("🔄 Start New Session", help="Reset and start fresh"):
+            for key in list(st.session_state.keys()):
+                if key != 'gemini_api_key':
+                    del st.session_state[key]
+            st.rerun()
         
         st.divider()
         
-        # Topic navigation
         if st.session_state.topics:
             for i, topic in enumerate(st.session_state.topics):
                 progress_status = "✅" if i < st.session_state.current_topic else "📍" if i == st.session_state.current_topic else "⭕️"
@@ -404,19 +305,15 @@ def main():
         st.markdown("""
         <div class="welcome-screen">
             <h1>📚 Welcome to AI Teaching Assistant</h1>
-            <p style="font-size: 1.2rem; color: #666; margin: 1rem 0;">
-                Transform your documents into interactive learning experiences.
-            </p>
+            <p>Upload your learning materials and let's create an interactive learning experience.</p>
             <div class="upload-section">
-                <p style="color: #4A90E2; font-size: 1.1rem; margin-bottom: 1rem;">
-                    📄 Drop your document here to begin
-                </p>
+                <p>📄 Drop your document here</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
         uploaded_file = st.file_uploader(
-            "",  # Empty label as we have custom HTML above
+            "",
             type=['pdf', 'docx', 'md'],
             help="Supported formats: PDF, DOCX, MD"
         )
@@ -424,7 +321,10 @@ def main():
         if uploaded_file:
             with st.spinner("🔄 Processing your document..."):
                 try:
-                    content = process_uploaded_file(uploaded_file)
+                    content = {
+                        "text": process_text_from_file(uploaded_file.read(), uploaded_file.type),
+                        "structure": {"sections": []}
+                    }
                     
                     if content["text"]:
                         topics = teacher.analyze_document(content)
@@ -432,9 +332,9 @@ def main():
                             st.session_state.topics = topics
                             st.rerun()
                         else:
-                            st.error("❌ Could not extract topics from the document. Please try a different document.")
+                            st.error("❌ Could not extract topics from the document.")
                     else:
-                        st.error("❌ Could not extract text from the document. Please check if the file is readable.")
+                        st.error("❌ Could not extract text from the document.")
                 except Exception as e:
                     st.error(f"❌ Error processing document: {str(e)}")
 
@@ -442,43 +342,50 @@ def main():
         # Display current topic
         current_topic = st.session_state.topics[st.session_state.current_topic]
         
-        # Topic header with improved styling
+        # Topic header
         st.markdown(f"""
         <div class="topic-header">
             <h2>{current_topic['title']}</h2>
-            <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">
-                Topic {st.session_state.current_topic + 1} of {len(st.session_state.topics)}
-            </p>
+            <p>Topic {st.session_state.current_topic + 1} of {len(st.session_state.topics)}</p>
         </div>
         """, unsafe_allow_html=True)
         
-        # Generate teaching content
+        # Learning objectives
+        with st.expander("🎯 Learning Objectives", expanded=True):
+            for objective in current_topic.get('learning_objectives', []):
+                st.markdown(f"- {objective}")
+        
+        # Generate and display lesson content
         with st.spinner("🎓 Preparing your lesson..."):
-            teaching_content = teacher.teach_topic(
+            lesson_content = teacher.teach_topic(
                 current_topic, 
                 st.session_state.user_progress
             )
+            st.markdown(lesson_content)
         
-        # Display teaching content in a clean container
-        st.markdown("""
-        <div style="background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-        """, unsafe_allow_html=True)
-        st.markdown(teaching_content)
-        st.markdown("</div>", unsafe_allow_html=True)
+        # Knowledge check
+        if 'knowledge_check' in current_topic:
+            with st.expander("📝 Knowledge Check"):
+                for q in current_topic['knowledge_check']['questions']:
+                    answer = st.radio(q['question'], q['options'])
+                    if st.button("Check Answer", key=f"check_{q['question']}"):
+                        if answer == q['correct_answer']:
+                            st.success(f"Correct! {q['explanation']}")
+                        else:
+                            st.error(f"Not quite. {q['explanation']}")
         
-        # Navigation buttons with improved layout
-        st.markdown("<br>", unsafe_allow_html=True)  # Add some spacing
-        cols = st.columns([1, 2, 1])  # Create three columns for better button spacing
+        # Navigation
+        cols = st.columns([1, 2, 1])
         
-        with cols[0]:  # Previous button
+        with cols[0]:
             if st.session_state.current_topic > 0:
-                if st.button("⬅️ Previous Topic", key="prev_topic", help="Go to previous topic"):
+                if st.button("⬅️ Previous Topic"):
                     st.session_state.current_topic -= 1
                     st.rerun()
         
-        with cols[2]:  # Next button
+        with cols[2]:
             if st.session_state.current_topic < len(st.session_state.topics) - 1:
-                if st.button("Next Topic ➡️", key="next_topic", help="Go to next topic"):
+                if st.button("Next Topic ➡️"):
                     st.session_state.current_topic += 1
                     st.rerun()
             elif st.session_state.current_topic == len(st.session_state.topics) - 1:
