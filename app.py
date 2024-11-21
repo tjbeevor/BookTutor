@@ -252,7 +252,7 @@ class DynamicTeacher:
                 "parts": [f"""Analyze this educational content and create a detailed learning structure.
                 
                 Content to analyze:
-                {text_content[:4000]}...
+                {text_content[:8000]}...
 
                 Create a learning structure with clear topics and key points. Format as JSON:
                 {{
@@ -271,7 +271,7 @@ class DynamicTeacher:
             response = self.model.generate_content(
                 prompt,
                 generation_config={
-                    'temperature': 0.4,
+                    'temperature': 0.5,
                     'top_p': 0.8,
                     'top_k': 40
                 }
@@ -318,7 +318,7 @@ class DynamicTeacher:
             return [{
                 'title': 'Document Overview',
                 'key_points': ['Document analysis needs review'],
-                'content': text_content[:4000] if text_content else 'Content unavailable',
+                'content': text_content[:8000] if text_content else 'Content unavailable',
                 'teaching_style': 'conceptual',
                 'difficulty': 'beginner'
             }]
@@ -355,7 +355,7 @@ class DynamicTeacher:
         response = self.model.generate_content(
             prompt,
             generation_config={
-                'temperature': 0.4,
+                'temperature': 0.5,
                 'top_p': 0.8,
                 'top_k': 40
             }
