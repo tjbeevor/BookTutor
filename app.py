@@ -864,58 +864,263 @@ class AdaptiveTutorialGenerator:
         return focus_map.get(approach, "general understanding")
 
 class TutorialManager:
-    """Manages the overall tutorial experience"""
+    """Enhanced Tutorial Manager with improved evaluation handling"""
     
     def __init__(self, model):
         self.content_analyzer = ContentAnalyzer(model)
         self.tutorial_generator = AdaptiveTutorialGenerator()
-        self.evaluation_engine = EvaluationEngine(model)
-        self.current_performance: float = 50.0
-        self.approach_history: List[str] = []
+        self.evaluation_engine = EnhancedEvaluationEngine(model)  # Use new evaluation engine
+        self.current_performance = {
+            'understanding_level': 50.0,
+            'cognitive_skills': {
+                'comprehension': 50.0,
+                'application': 50.0,
+                'analysis': 50.0
+            },
+            'response_quality': {
+                'clarity': 50.0,
+                'completeness': 50.0,
+                'accuracy': 50.0,
+                'depth': 50.0
+            }
+        }
+        self.approach_history = []
+        self.topic_evaluations = {}  # Store detailed evaluations per topic
         
     def create_tutorial(self, content: Dict[str, Any]) -> List[Topic]:
         """Create a new tutorial from content"""
-        return self.content_analyzer.analyze_content(content)
+        topics = self.content_analyzer.analyze_content(content)
+        # Initialize evaluation storage for each topic
+        for topic in topics:
+            self.topic_evaluations[topic.title] = []
+        return topics
         
     def generate_next_content(self, topic: Topic) -> Dict[str, Any]:
-        """Generate next piece of tutorial content"""
+        """Generate next piece of tutorial content with adaptive difficulty"""
+        # Use cognitive skills to adjust content difficulty
+        cognitive_level = sum(self.current_performance['cognitive_skills'].values()) / 3
+        
+        # Adjust content based on response quality
+        quality_level = sum(self.current_performance['response_quality'].values()) / 4
+        
+        # Generate tutorial content with enhanced parameters
         return self.tutorial_generator.generate_tutorial(
-            topic, 
-            self.current_performance
+            topic=topic,
+            user_performance=self.current_performance['understanding_level'],
+            cognitive_level=cognitive_level,
+            quality_level=quality_level,
+            previous_evaluations=self.topic_evaluations.get(topic.title, [])
         )
         
     def evaluate_response(self, user_response: str, topic: Topic) -> Dict[str, Any]:
-        """Evaluate user response and provide feedback"""
-        # Get expected points from topic metadata
-        expected_points = topic.metadata.get('key_points', []) if topic.metadata else []
-        
-        # Use evaluation engine to evaluate response
-        evaluation_result = self.evaluation_engine.evaluate_response(
-            user_response,
-            expected_points,
-            topic
+        """Evaluate user response with enhanced feedback"""
+        try:
+            # Get expected points from topic metadata
+            expected_points = topic.metadata.get('key_points', []) if topic.metadata else []
+            
+            # Use enhanced evaluation engine
+            evaluation_result = self.evaluation_engine.evaluate_response(
+                user_response=user_response,
+                expected_points=expected_points,
+                topic=topic
+            )
+            
+            # Store evaluation for topic history
+            self.topic_evaluations[topic.title].append({
+                'response': user_response,
+                'evaluation': evaluation_result,
+                'timestamp': time.time()
+            })
+            
+            # Update performance metrics
+            self._update_performance_metrics(evaluation_result)
+            
+            # Generate adaptive recommendations
+            recommendations = self._generate_adaptive_recommendations(
+                topic=topic,
+                evaluation_result=evaluation_result
+            )
+            
+            # Add recommendations to evaluation result
+            evaluation_result['recommendations'] = recommendations
+            
+            return evaluation_result
+            
+        except Exception as e:
+            st.error(f"Error in evaluation: {str(e)}")
+            return self._create_detailed_fallback_evaluation(topic)
+            
+    def _update_performance_metrics(self, evaluation_result: Dict[str, Any]) -> None:
+        """Update all performance metrics from evaluation"""
+        # Update understanding level
+        self.current_performance['understanding_level'] = evaluation_result.get(
+            'understanding_level',
+            self.current_performance['understanding_level']
         )
         
-        # Update current performance
-        self.current_performance = evaluation_result.get('understanding_level', self.current_performance)
+        # Update cognitive skills
+        eval_cognitive = evaluation_result.get('evaluation_data', {}).get('cognitive_skills', {})
+        for skill, value in eval_cognitive.items():
+            if skill in self.current_performance['cognitive_skills']:
+                # Use exponential moving average for smooth transitions
+                alpha = 0.3  # Smoothing factor
+                current = self.current_performance['cognitive_skills'][skill]
+                self.current_performance['cognitive_skills'][skill] = (
+                    alpha * value + (1 - alpha) * current
+                )
         
-        return evaluation_result
+        # Update response quality metrics
+        eval_quality = evaluation_result.get('evaluation_data', {}).get('response_quality', {})
+        for metric, value in eval_quality.items():
+            if metric in self.current_performance['response_quality']:
+                # Use exponential moving average
+                alpha = 0.3
+                current = self.current_performance['response_quality'][metric]
+                self.current_performance['response_quality'][metric] = (
+                    alpha * value + (1 - alpha) * current
+                )
+    
+    def _generate_adaptive_recommendations(self, 
+                                        topic: Topic,
+                                        evaluation_result: Dict[str, Any]) -> List[str]:
+        """Generate personalized recommendations based on performance history"""
+        recommendations = []
         
-    def update_performance(self, evaluation_result: Dict[str, Any]) -> None:
-        """Update user performance metrics"""
-        self.current_performance = evaluation_result.get('understanding_level', self.current_performance)
+        # Analyze performance trends
+        topic_history = self.topic_evaluations[topic.title]
+        if len(topic_history) >= 2:
+            # Check for recurring issues
+            recurring_issues = self._identify_recurring_issues(topic_history)
+            for issue in recurring_issues:
+                recommendations.append(f"Focus on improving {issue}")
         
-    def get_alternative_content(self, topic: Topic) -> Optional[Dict[str, Any]]:
-        """Get alternative explanation if needed"""
-        if self.current_performance < 65 and self.approach_history:
-            return self.tutorial_generator.generate_alternative_explanation(
-                topic,
-                self.approach_history[-1]
+        # Add cognitive skill-based recommendations
+        cognitive_skills = self.current_performance['cognitive_skills']
+        lowest_skill = min(cognitive_skills.items(), key=lambda x: x[1])
+        if lowest_skill[1] < 70:
+            recommendations.append(
+                f"Work on improving {lowest_skill[0]} through additional practice"
             )
-        return None
+        
+        # Add quality-based recommendations
+        quality_metrics = self.current_performance['response_quality']
+        lowest_quality = min(quality_metrics.items(), key=lambda x: x[1])
+        if lowest_quality[1] < 70:
+            recommendations.append(
+                f"Focus on improving {lowest_quality[0]} in your responses"
+            )
+        
+        # Add topic-specific recommendations
+        topic_recommendations = self._get_topic_specific_recommendations(
+            topic,
+            evaluation_result
+        )
+        recommendations.extend(topic_recommendations)
+        
+        return recommendations
+    
+    def _identify_recurring_issues(self, topic_history: List[Dict]) -> List[str]:
+        """Identify recurring issues in user responses"""
+        issues = []
+        
+        # Analyze last 3 evaluations
+        recent_evals = topic_history[-3:]
+        
+        # Check for consistently low scores in specific areas
+        areas = {
+            'comprehension': [],
+            'application': [],
+            'analysis': [],
+            'clarity': [],
+            'completeness': [],
+            'accuracy': [],
+            'depth': []
+        }
+        
+        for eval_data in recent_evals:
+            evaluation = eval_data['evaluation']
+            
+            # Collect cognitive skills scores
+            cognitive = evaluation.get('evaluation_data', {}).get('cognitive_skills', {})
+            for skill, score in cognitive.items():
+                areas[skill].append(score)
+            
+            # Collect quality metrics
+            quality = evaluation.get('evaluation_data', {}).get('response_quality', {})
+            for metric, score in quality.items():
+                areas[metric].append(score)
+        
+        # Identify consistently low areas
+        for area, scores in areas.items():
+            if scores and all(score < 70 for score in scores):
+                issues.append(area)
+        
+        return issues
+    
+    def _get_topic_specific_recommendations(self, 
+                                          topic: Topic,
+                                          evaluation_result: Dict[str, Any]) -> List[str]:
+        """Generate recommendations specific to the topic"""
+        recommendations = []
+        
+        # Get missing points
+        point_analysis = evaluation_result.get('evaluation_data', {}).get('point_analysis', [])
+        missing_points = [
+            point['point'] for point in point_analysis 
+            if point['coverage'] == 'none'
+        ]
+        
+        if missing_points:
+            recommendations.append(
+                f"Review these key points: {', '.join(missing_points)}"
+            )
+        
+        # Add specific practice suggestions based on topic type
+        if topic.metadata and topic.metadata.get('content_type') == 'technical':
+            recommendations.append("Practice with hands-on examples")
+        elif topic.metadata and topic.metadata.get('content_type') == 'theoretical':
+            recommendations.append("Focus on understanding underlying principles")
+        
+        return recommendations
+    
+    def _create_detailed_fallback_evaluation(self, topic: Topic) -> Dict[str, Any]:
+        """Create detailed fallback evaluation when main evaluation fails"""
+        return {
+            "understanding_level": 50.0,
+            "feedback": f"""
+## Feedback Analysis 📊
 
-class EvaluationEngine:
-    """Handles evaluation of user responses and progress"""
+We couldn't generate detailed feedback for your response about {topic.title}.
+Please try again and:
+1. Address all key points
+2. Provide specific examples
+3. Explain concepts clearly
+
+### Understanding Level
+▰▰▰▰▰▱▱▱▱▱ 50%
+""",
+            "evaluation_data": {
+                "cognitive_skills": {
+                    "comprehension": 50.0,
+                    "application": 50.0,
+                    "analysis": 50.0
+                },
+                "response_quality": {
+                    "clarity": 50.0,
+                    "completeness": 50.0,
+                    "accuracy": 50.0,
+                    "depth": 50.0
+                }
+            },
+            "recommendations": [
+                "Please provide a more detailed response",
+                "Include specific examples",
+                "Address all key points from the topic"
+            ]
+        }
+
+class EnhancedEvaluationEngine:
+    """Enhanced evaluation engine with improved response analysis"""
     
     def __init__(self, model):
         self.model = model
@@ -923,10 +1128,14 @@ class EvaluationEngine:
     def evaluate_response(self, user_response: str, 
                          expected_points: List[str], 
                          topic: Topic) -> Dict[str, Any]:
-        """Evaluate user response and provide detailed feedback"""
+        """Evaluate user response with enhanced analysis"""
         try:
+            # Check for low-effort responses
+            if self._is_low_effort_response(user_response):
+                return self._generate_low_effort_feedback()
+            
             # Generate evaluation prompt
-            prompt = self._create_evaluation_prompt(
+            prompt = self._create_enhanced_evaluation_prompt(
                 user_response,
                 expected_points,
                 topic
@@ -934,149 +1143,262 @@ class EvaluationEngine:
             
             # Get AI evaluation
             response = self.model.generate_content(prompt)
-            evaluation = json.loads(clean_json_string(response.text))
             
-            # Calculate understanding level
-            understanding_level = self._calculate_understanding_level(evaluation)
+            try:
+                evaluation = json.loads(clean_json_string(response.text))
+            except json.JSONDecodeError:
+                # Fallback to structured extraction if JSON parsing fails
+                evaluation = self._extract_structured_evaluation(response.text)
             
-            # Format feedback
-            feedback = self._format_feedback(evaluation)
+            # Enhance evaluation with detailed analysis
+            enhanced_evaluation = self._enhance_evaluation(evaluation, user_response, expected_points)
+            
+            # Calculate nuanced understanding level
+            understanding_level = self._calculate_nuanced_understanding(enhanced_evaluation)
+            
+            # Generate specific, actionable feedback
+            feedback = self._generate_detailed_feedback(enhanced_evaluation)
             
             return {
                 "understanding_level": understanding_level,
                 "feedback": feedback,
-                "evaluation_data": evaluation,
-                "recommendations": self._generate_recommendations(evaluation)
+                "evaluation_data": enhanced_evaluation,
+                "recommendations": self._generate_targeted_recommendations(enhanced_evaluation)
             }
             
         except Exception as e:
             st.error(f"Error in evaluation: {str(e)}")
-            return self._create_fallback_evaluation()
+            return self._create_detailed_fallback_evaluation()
+    
+    def _is_low_effort_response(self, response: str) -> bool:
+        """Detect low-effort or non-serious responses"""
+        response = response.lower().strip()
+        
+        # Check response length
+        if len(response.split()) < 3:
+            return True
             
-    def _create_evaluation_prompt(self, user_response: str, 
-                                expected_points: List[str], 
-                                topic: Topic) -> str:
-        """Create prompt for evaluation"""
+        # Check for common low-effort responses
+        low_effort_patterns = [
+            r'^(ok|cool|nice|good|yes|no|maybe)[\s\.]*$',
+            r'^(i understand|got it|makes sense)[\s\.]*$',
+            r'^(idk|dunno|whatever)[\s\.]*$'
+        ]
+        
+        return any(re.match(pattern, response) for pattern in low_effort_patterns)
+    
+    def _create_enhanced_evaluation_prompt(self, user_response: str,
+                                         expected_points: List[str],
+                                         topic: Topic) -> str:
+        """Create a more nuanced evaluation prompt"""
         return f"""
-        Evaluate this response about {topic.title}.
+        Evaluate this response about {topic.title} using the following criteria:
+
+        User response: "{user_response}"
         
-        User response: {user_response}
+        Expected key points:
+        {json.dumps(expected_points, indent=2)}
         
-        Expected key points: {', '.join(expected_points)}
-        
-        Return a JSON object with this structure:
+        Evaluate and return a JSON object with:
         {{
-            "points_covered": [
-                "Point 1",
-                "Point 2"
+            "point_analysis": [
+                {{
+                    "point": "expected point",
+                    "coverage": "full|partial|none",
+                    "understanding": "deep|basic|superficial|incorrect",
+                    "evidence": "relevant text from response",
+                    "improvement_needed": "specific improvement suggestion"
+                }}
             ],
-            "missing_points": [
-                "Point 3"
-            ],
+            "cognitive_skills": {{
+                "comprehension": 0-100,
+                "application": 0-100,
+                "analysis": 0-100
+            }},
+            "response_quality": {{
+                "clarity": 0-100,
+                "completeness": 0-100,
+                "accuracy": 0-100,
+                "depth": 0-100
+            }},
             "misconceptions": [
-                "Misconception 1"
+                {{
+                    "identified": "misconception",
+                    "correction": "correct understanding",
+                    "explanation": "why it's wrong"
+                }}
             ],
-            "understanding_level": 75,
             "strengths": [
-                "Strength 1"
+                {{
+                    "aspect": "what was done well",
+                    "example": "evidence from response"
+                }}
             ],
-            "areas_for_improvement": [
-                "Area 1"
-            ],
-            "suggestions": [
-                "Suggestion 1"
+            "improvement_areas": [
+                {{
+                    "aspect": "what needs improvement",
+                    "current_state": "current understanding",
+                    "target_state": "desired understanding",
+                    "suggestion": "specific improvement action"
+                }}
             ]
         }}
+
+        Base evaluation on:
+        1. Accuracy and completeness of point coverage
+        2. Depth of understanding demonstrated
+        3. Application of concepts
+        4. Clarity of explanation
+        5. Identification of misconceptions
         
-        The understanding_level should be between 0 and 100.
-        Base your evaluation strictly on how well the response covers the expected key points.
-        List specific strengths and areas for improvement.
-        Provide actionable suggestions for improvement.
-        Return only the JSON object, no additional text.
+        Provide specific evidence and examples from the response.
         """
+    
+    def _calculate_nuanced_understanding(self, evaluation: Dict[str, Any]) -> float:
+        """Calculate understanding level with weighted criteria"""
+        weights = {
+            'point_coverage': 0.35,
+            'cognitive_skills': 0.25,
+            'response_quality': 0.25,
+            'misconceptions': 0.15
+        }
         
-    def _calculate_understanding_level(self, evaluation: Dict[str, Any]) -> float:
-        """Calculate overall understanding level"""
-        base_level = evaluation.get('understanding_level', 50)
+        # Calculate point coverage score
+        point_scores = {
+            'full': 1.0,
+            'partial': 0.5,
+            'none': 0.0
+        }
         
-        # Adjust based on points covered and missing
-        points_covered = len(evaluation.get('points_covered', []))
-        points_missing = len(evaluation.get('missing_points', []))
-        misconceptions = len(evaluation.get('misconceptions', []))
+        point_coverage = sum(point_scores[point['coverage']] 
+                           for point in evaluation.get('point_analysis', [])) / \
+                        len(evaluation.get('point_analysis', [1]))
         
-        # Apply adjustments
-        adjusted_level = base_level
-        if points_covered > 0:
-            adjusted_level += min(points_covered * 5, 20)
-        if points_missing > 0:
-            adjusted_level -= min(points_missing * 5, 20)
-        if misconceptions > 0:
-            adjusted_level -= min(misconceptions * 10, 30)
-            
-        # Ensure result is between 0 and 100
-        return max(0, min(100, adjusted_level))
+        # Calculate cognitive skills score
+        cognitive_skills = sum(evaluation.get('cognitive_skills', {}).values()) / 300
         
-    def _format_feedback(self, evaluation: Dict[str, Any]) -> str:
-        """Format evaluation feedback for display"""
+        # Calculate response quality score
+        response_quality = sum(evaluation.get('response_quality', {}).values()) / 400
+        
+        # Calculate misconceptions impact
+        misconceptions_count = len(evaluation.get('misconceptions', []))
+        misconceptions_impact = max(0, 1 - (misconceptions_count * 0.2))
+        
+        # Calculate weighted final score
+        understanding_level = (
+            point_coverage * weights['point_coverage'] +
+            cognitive_skills * weights['cognitive_skills'] +
+            response_quality * weights['response_quality'] +
+            misconceptions_impact * weights['misconceptions']
+        ) * 100
+        
+        return round(max(0, min(100, understanding_level)), 1)
+    
+    def _generate_detailed_feedback(self, evaluation: Dict[str, Any]) -> str:
+        """Generate specific, actionable feedback"""
+        # Format point-by-point analysis
+        point_analysis = "\n".join([
+            f"### {point['point']}\n"
+            f"- Coverage: {point['coverage'].title()}\n"
+            f"- Understanding: {point['understanding'].title()}\n"
+            f"- Evidence: \"{point['evidence']}\"\n"
+            f"- To improve: {point['improvement_needed']}\n"
+            for point in evaluation.get('point_analysis', [])
+        ])
+        
+        # Format cognitive skills feedback
+        cognitive_skills = evaluation.get('cognitive_skills', {})
+        skills_feedback = (
+            f"- Comprehension: {'▰' * int(cognitive_skills.get('comprehension', 0)/10)}"
+            f"{'▱' * (10-int(cognitive_skills.get('comprehension', 0)/10))}\n"
+            f"- Application: {'▰' * int(cognitive_skills.get('application', 0)/10)}"
+            f"{'▱' * (10-int(cognitive_skills.get('application', 0)/10))}\n"
+            f"- Analysis: {'▰' * int(cognitive_skills.get('analysis', 0)/10)}"
+            f"{'▱' * (10-int(cognitive_skills.get('analysis', 0)/10))}\n"
+        )
+        
         return f"""
-## Feedback Analysis 📊
+## Detailed Feedback Analysis 📊
 
-### ✅ Strengths
-{"".join(f"- {strength}\n" for strength in evaluation.get('strengths', []))}
+### Point-by-Point Analysis
+{point_analysis}
 
-### 📝 Areas for Improvement
-{"".join(f"- {area}\n" for area in evaluation.get('areas_for_improvement', []))}
+### Cognitive Skills Assessment
+{skills_feedback}
 
-### 🎯 Key Points Covered
-{"".join(f"- {point}\n" for point in evaluation.get('points_covered', []))}
+### Key Strengths 💪
+{"".join(f"- {strength['aspect']}\n  Example: \"{strength['example']}\"\n" for strength in evaluation.get('strengths', []))}
 
-### ⚠️ Missing Points
-{"".join(f"- {point}\n" for point in evaluation.get('missing_points', []))}
-
-### 💡 Suggestions
-{"".join(f"- {suggestion}\n" for suggestion in evaluation.get('suggestions', []))}
+### Areas for Improvement 📈
+{"".join(f"- {area['aspect']}\n  Current: {area['current_state']}\n  Goal: {area['target_state']}\n  Suggestion: {area['suggestion']}\n" for area in evaluation.get('improvement_areas', []))}
 
 ### Understanding Level
-{'▰' * int(evaluation.get('understanding_level', 50)/10)}{'▱' * (10-int(evaluation.get('understanding_level', 50)/10))} {evaluation.get('understanding_level', 50)}%
+{'▰' * int(evaluation.get('understanding_level', 0)/10)}{'▱' * (10-int(evaluation.get('understanding_level', 0)/10))} {evaluation.get('understanding_level', 0)}%
 """
-
-    def _generate_recommendations(self, evaluation: Dict[str, Any]) -> List[str]:
-        """Generate learning recommendations based on evaluation"""
+    
+    def _generate_targeted_recommendations(self, evaluation: Dict[str, Any]) -> List[str]:
+        """Generate specific, actionable recommendations"""
         recommendations = []
         
-        # Add recommendations based on missing points
-        if evaluation.get('missing_points'):
-            recommendations.append("Review the following topics: " + 
-                                ", ".join(evaluation['missing_points']))
-            
-        # Add recommendations based on misconceptions
-        if evaluation.get('misconceptions'):
-            recommendations.append("Clarify understanding of: " + 
-                                ", ".join(evaluation['misconceptions']))
-            
-        # Add general improvement suggestions
-        if evaluation.get('suggestions'):
-            recommendations.extend(evaluation['suggestions'])
-            
-        return recommendations
+        # Add recommendations based on cognitive skills
+        cognitive_skills = evaluation.get('cognitive_skills', {})
+        if cognitive_skills.get('comprehension', 0) < 70:
+            recommendations.append("Review the core concepts and definitions")
+        if cognitive_skills.get('application', 0) < 70:
+            recommendations.append("Practice applying concepts to real-world scenarios")
+        if cognitive_skills.get('analysis', 0) < 70:
+            recommendations.append("Work on analyzing relationships between concepts")
         
-    def _create_fallback_evaluation(self) -> Dict[str, Any]:
-        """Create basic evaluation when AI evaluation fails"""
+        # Add recommendations based on response quality
+        quality = evaluation.get('response_quality', {})
+        if quality.get('clarity', 0) < 70:
+            recommendations.append("Focus on explaining concepts more clearly and systematically")
+        if quality.get('completeness', 0) < 70:
+            recommendations.append("Ensure all key points are addressed in your responses")
+        if quality.get('depth', 0) < 70:
+            recommendations.append("Provide more detailed explanations with specific examples")
+        
+        # Add specific improvement suggestions
+        for area in evaluation.get('improvement_areas', []):
+            recommendations.append(area['suggestion'])
+        
+        return recommendations
+    
+    def _generate_low_effort_feedback(self) -> Dict[str, Any]:
+        """Generate feedback for low-effort responses"""
         return {
-            "understanding_level": 50,
+            "understanding_level": 0,
             "feedback": """
 ## Feedback Analysis 📊
 
-Thank you for your response. Due to processing limitations, 
-detailed feedback couldn't be generated.
+Your response appears to be too brief or general to demonstrate understanding of the topic.
+Please provide a more detailed response that:
+1. Addresses the key points
+2. Demonstrates your understanding
+3. Includes specific examples or explanations
 
 ### Understanding Level
-▰▰▰▰▰▱▱▱▱▱ 50%
-
-Please continue with the next topic.
+▱▱▱▱▱▱▱▱▱▱ 0%
 """,
-            "evaluation_data": {},
-            "recommendations": ["Continue to next topic"]
+            "evaluation_data": {
+                "point_analysis": [],
+                "cognitive_skills": {
+                    "comprehension": 0,
+                    "application": 0,
+                    "analysis": 0
+                },
+                "response_quality": {
+                    "clarity": 0,
+                    "completeness": 0,
+                    "accuracy": 0,
+                    "depth": 0
+                }
+            },
+            "recommendations": [
+                "Provide a complete response that addresses all key points",
+                "Demonstrate your understanding with specific examples",
+                "Explain concepts in your own words"
+            ]
         }
 # Main Application Logic and Streamlit Interface
 
