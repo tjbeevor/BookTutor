@@ -1,5 +1,5 @@
 # Section 1: Imports and Data Classes
-```python
+
 import streamlit as st
 import google.generativeai as genai
 import PyPDF2
@@ -19,7 +19,7 @@ class Topic:
 ```
 
 # Section 2: Tutorial State Management
-```python
+
 class TutorialState:
     def __init__(self):
         self.topics: List[Topic] = []
@@ -76,10 +76,10 @@ class TutorialState:
                 self.current_subtopic_index = -1
                 return True
             return False
-```
+
 
 # Section 3: Model Initialization and PDF Processing
-```python
+
 def init_gemini(api_key: str = None):
     try:
         if api_key:
@@ -115,10 +115,10 @@ def process_pdf(pdf_file) -> str:
     except Exception as e:
         st.error(f"Error processing PDF: {str(e)}")
         raise
-```
+
 
 # Section 4: JSON Processing and Tutorial Structure Generation
-```python
+
 def clean_json_string(json_str: str) -> str:
     try:
         json_str = json_str.replace("```json", "").replace("```", "")
@@ -198,10 +198,10 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
             subtopics=[],
             completed=False
         )]
-```
+
 
 # Section 5: Teaching Content Generation and Evaluation
-```python
+
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     try:
         prompt = f"""
@@ -262,10 +262,10 @@ def evaluate_response(user_response: str, expected_points: List[str], current_to
             "feedback": "Thank you for your response. Keep practicing!",
             "understanding_level": 50
         }
-```
+
 
 # Section 6: Main Application Logic
-```python
+
 def main():
     st.set_page_config(
         page_title="AI Learning Assistant",
