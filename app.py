@@ -703,7 +703,7 @@ class AdaptiveTutorialGenerator:
             return "beginner"
         return current_difficulty
 
-def generate_alternative_explanation(self, topic: Topic, 
+    def generate_alternative_explanation(self, topic: Topic, 
                                       previous_approach: str) -> Dict[str, Any]:
         """Generate alternative explanation when user struggles"""
         # Define possible approaches
