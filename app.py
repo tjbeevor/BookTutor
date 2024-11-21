@@ -370,7 +370,114 @@ def reset_application():
 
 # 6. KEEP THE MAIN FUNCTION AND EVERYTHING ELSE
 def main():
-    [Keep your existing main() function exactly as is]
+    """Main application function"""
+    st.set_page_config(
+        page_title="Enhanced Learning Assistant",
+        page_icon="📚",
+        layout="wide"
+    )
+
+    st.title("📚 Enhanced Learning Assistant")
+    st.write("Upload your educational content and let AI help transform it into an interactive learning experience.")
+
+    # Initialize model
+    model = initialize_model()
+    if not model:
+        return
+
+    # Initialize teacher
+    teacher = EnhancedTeacher(model)
+
+    # Session state initialization
+    if 'current_topics' not in st.session_state:
+        st.session_state.current_topics = []
+    if 'user_progress' not in st.session_state:
+        st.session_state.user_progress = {
+            'understanding_level': 'beginner',
+            'completed_topics': []
+        }
+
+    # Sidebar
+    with st.sidebar:
+        st.header("Settings")
+        
+        # Reset button
+        if st.button("Reset Application", type="secondary"):
+            reset_application()
+        
+        # Understanding level selector
+        st.session_state.user_progress['understanding_level'] = st.selectbox(
+            "Select your understanding level:",
+            ["beginner", "intermediate", "advanced"],
+            index=["beginner", "intermediate", "advanced"].index(
+                st.session_state.user_progress.get('understanding_level', 'beginner')
+            )
+        )
+
+    # Main content area
+    uploaded_file = st.file_uploader(
+        "Upload your educational content (PDF, DOCX, or Markdown)",
+        type=['pdf', 'docx', 'md'],
+        help="Upload your educational material to begin"
+    )
+
+    if uploaded_file:
+        try:
+            # Process the uploaded file
+            file_content = uploaded_file.read()
+            text_content = process_text_from_file(file_content, uploaded_file.type)
+
+            # Analyze content
+            with st.spinner("Analyzing content and creating learning modules..."):
+                topics = teacher.analyze_document({'text': text_content})
+                st.session_state.current_topics = topics
+
+            # Display topics
+            if st.session_state.current_topics:
+                st.subheader("📑 Learning Modules")
+                
+                for i, topic in enumerate(st.session_state.current_topics):
+                    with st.expander(f"Module {i+1}: {topic['title']}", expanded=i==0):
+                        # Topic metadata
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.caption(f"Difficulty: {topic['difficulty']}")
+                        with col2:
+                            st.caption(f"Estimated time: {topic['estimated_time']}")
+                        with col3:
+                            st.caption(f"Status: {'Completed' if topic['title'] in st.session_state.user_progress['completed_topics'] else 'Not Started'}")
+
+                        # Display lesson content
+                        if st.button(f"Start Module {i+1}", key=f"start_module_{i}"):
+                            lesson_content = teacher.teach_topic(topic, st.session_state.user_progress)
+                            st.markdown(lesson_content)
+
+                            # Knowledge check section
+                            if topic.get('knowledge_check', {}).get('questions'):
+                                st.subheader("✍️ Knowledge Check")
+                                for q_idx, question in enumerate(topic['knowledge_check']['questions']):
+                                    st.write(f"Q{q_idx + 1}: {question['question']}")
+                                    answer = st.radio(
+                                        "Select your answer:",
+                                        question['options'],
+                                        key=f"q_{i}_{q_idx}"
+                                    )
+                                    if st.button("Check Answer", key=f"check_{i}_{q_idx}"):
+                                        if answer == question['correct_answer']:
+                                            st.success("Correct! " + question['explanation'])
+                                        else:
+                                            st.error(f"Not quite. The correct answer is: {question['correct_answer']}")
+
+                            # Mark as complete button
+                            if st.button("Mark as Complete", key=f"complete_{i}"):
+                                if topic['title'] not in st.session_state.user_progress['completed_topics']:
+                                    st.session_state.user_progress['completed_topics'].append(topic['title'])
+                                st.success("Module marked as complete!")
+                                st.rerun()
+
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
+            st.write("Please try uploading a different file or contact support if the issue persists.")
 
 if __name__ == "__main__":
     main()
