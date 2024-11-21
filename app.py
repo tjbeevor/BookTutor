@@ -292,55 +292,50 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     """
-    Generate more contextual and engaging teaching content.
+    Generate cohesive, well-structured teaching content with proper formatting and flow.
     """
     try:
-        # Create a more detailed context from conversation history
-        previous_topics = []
-        for msg in conversation_history:
-            if msg["role"] == "assistant" and "<h2>" in msg["content"]:
-                topic_title = msg["content"].split("<h2>")[1].split("</h2>")[0]
-                previous_topics.append(topic_title)
-
         prompt = f"""
-        Create an engaging, well-structured lesson about: {topic.title}
+        Create a comprehensive, well-structured lesson about: {topic.title}
         
-        Context:
-        - Main topic content: {topic.content}
-        - Teaching phase: {phase}
-        - Previously covered topics: {', '.join(previous_topics) if previous_topics else 'This is the first topic'}
+        Main content to cover: {topic.content}
         
-        Create a lesson that:
-        1. Starts with a clear introduction of the concept
-        2. Builds on any previously covered topics
-        3. Uses concrete, relatable examples
-        4. Includes interactive elements
-        5. Leads to practical applications
+        Follow these specific guidelines:
         
-        The explanation should:
-        - Break down complex ideas into digestible parts
-        - Use clear, concise language
-        - Include relevant analogies or comparisons
-        - Connect to real-world applications
+        1. EXPLANATION section should:
+           - Start with a clear introduction of the main concept
+           - Break down the topic into clear, logical subsections
+           - Use proper formatting with headers, bullet points, and paragraphs
+           - Present information in a hierarchical, easy-to-follow structure
+           - Include detailed explanations of each key concept
+           - Use bold text for important terms and concepts
         
-        The examples should:
-        - Be specific and detailed
-        - Range from simple to more complex
-        - Connect to practical applications
-        - Include step-by-step explanations where appropriate
+        2. EXAMPLES section should:
+           - Directly relate to the concepts explained above
+           - Provide real-world applications of specific concepts covered
+           - Include step-by-step walkthroughs where appropriate
+           - Reference specific parts of the explanation
+           - Show practical implementation of the concepts
+           - Progress from simple to more complex applications
         
-        The question should:
-        - Directly relate to the content just covered
-        - Test understanding of key concepts
-        - Encourage critical thinking
-        - Allow for demonstration of practical application
+        3. UNDERSTANDING CHECK should:
+           - Ask a question that tests comprehension of both the explanation and examples
+           - Reference specific concepts covered in the lesson
+           - Require analytical thinking about the material presented
+           - Be specific to the content just covered
+           - Allow students to demonstrate understanding of practical applications
         
-        Return the lesson as JSON in this format:
+        4. KEY POINTS should:
+           - Summarize the most important concepts covered
+           - Directly relate to the content presented
+           - Include specific terminology and concepts from the lesson
+        
+        Format the response as JSON with proper HTML formatting:
         {{
-            "explanation": "Multi-paragraph explanation with clear structure and progression",
-            "examples": "2-3 specific, detailed examples with explanations",
-            "question": "A thought-provoking question that tests understanding of the specific content covered",
-            "key_points": ["3-4 specific key points from this lesson"]
+            "explanation": "<div class='content-section'>[Detailed, well-formatted explanation with proper HTML tags]</div>",
+            "examples": "<div class='example-section'>[2-3 specific, relevant examples with proper formatting]</div>",
+            "question": "[Specific, relevant question about the content covered]",
+            "key_points": ["Specific point 1", "Specific point 2", "Specific point 3"]
         }}
         """
         
@@ -351,30 +346,50 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
                 response_text = clean_json_string(response.text)
                 lesson_content = json.loads(response_text)
                 
+                # Format the lesson content with proper HTML structure
+                explanation = lesson_content["explanation"].replace('\n', '<br>')
+                examples = lesson_content["examples"].replace('\n', '<br>')
+                
+                lesson_content["explanation"] = f"""
+                    <div class='content-section'>
+                        <h3>📚 Main Concepts</h3>
+                        <div class='explanation-content'>
+                            {explanation}
+                        </div>
+                    </div>
+                """
+                
+                lesson_content["examples"] = f"""
+                    <div class='example-section'>
+                        <h3>🔍 Practical Applications</h3>
+                        <div class='examples-content'>
+                            {examples}
+                        </div>
+                    </div>
+                """
+                
                 # Validate content
-                required_keys = ["explanation", "examples", "question", "key_points"]
-                if not all(key in lesson_content for key in required_keys):
-                    raise ValueError("Missing required content sections")
-                    
-                # Ensure content is substantial
-                if len(lesson_content["explanation"]) < 100:
-                    raise ValueError("Explanation too short")
-                    
+                if len(lesson_content["explanation"]) < 200:
+                    raise ValueError("Explanation too brief")
+                if len(lesson_content["examples"]) < 100:
+                    raise ValueError("Examples too brief")
+                if len(lesson_content["question"]) < 50:
+                    raise ValueError("Question too brief")
+                
                 return lesson_content
                 
             except Exception as e:
                 if attempt == max_retries - 1:
-                    st.error(f"Failed to generate teaching content after {max_retries} attempts")
                     raise
                 time.sleep(1)
                 
     except Exception as e:
         st.error(f"Error generating teaching content: {str(e)}")
         return {
-            "explanation": f"Let's explore {topic.title}:\n\n{topic.content}",
-            "examples": "Let's look at some practical examples...",
-            "question": f"Based on what we've covered about {topic.title}, explain how you would apply these concepts in a practical situation.",
-            "key_points": ["Understanding core concepts", "Practical applications", "Key takeaways"]
+            "explanation": f"<div class='content-section'><h3>📚 Main Concepts</h3>{topic.content}</div>",
+            "examples": "<div class='example-section'><h3>🔍 Practical Applications</h3>Examples to be generated...</div>",
+            "question": "Based on the content covered, explain your understanding of the key concepts.",
+            "key_points": ["Key concept 1", "Key concept 2", "Key concept 3"]
         }
 def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
     """
