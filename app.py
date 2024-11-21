@@ -292,17 +292,24 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     """
-    Generate cohesive, well-structured teaching content with all fixes in place.
-    Maintains original logic while fixing formatting and JSON issues.
+    Generate cohesive, well-structured teaching content with improved formatting.
+    
+    Args:
+        topic: Topic object containing the current topic information
+        phase: Current teaching phase
+        conversation_history: List of previous conversation messages
+        model: The AI model instance
+    
+    Returns:
+        dict: Formatted teaching content with explanation, examples, questions, and key points
     """
-    # Keep existing conversation history logic
+    # Create context from conversation history
     previous_topics = []
     for msg in conversation_history:
         if msg["role"] == "assistant" and "<h2>" in msg["content"]:
             topic_title = msg["content"].split("<h2>")[1].split("</h2>")[0]
             previous_topics.append(topic_title)
 
-    # Modified prompt to ensure valid JSON response
     prompt = f"""
     Create a comprehensive, well-structured lesson about: {topic.title}
     
@@ -336,31 +343,21 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     - Encourage critical thinking
     - Allow for demonstration of practical application
     
-    Structure your response as a valid JSON object with this exact format (keep all double quotes):
+    Return only a valid JSON object in exactly this format:
     {{
-        "title": "{topic.title}",
-        "sections": [
-            {{
-                "heading": "Introduction",
-                "content": "Introduction text here",
-                "points": []
-            }},
-            {{
-                "heading": "Main Concepts",
-                "content": "Main concept explanation",
-                "points": ["point 1", "point 2"]
-            }}
-        ],
+        "explanation": "Main explanation text with section headings",
         "examples": [
             {{
-                "title": "Example title",
-                "description": "Scenario description",
-                "steps": ["step 1", "step 2", "step 3"]
+                "title": "Clear example title",
+                "description": "Description of the scenario",
+                "steps": ["Step 1", "Step 2", "Step 3"]
             }}
         ],
-        "question": "Understanding check question",
-        "key_points": ["key point 1", "key point 2", "key point 3"]
+        "question": "Question text",
+        "key_points": ["Point 1", "Point 2", "Point 3"]
     }}
+    
+    Do not add any additional text or formatting outside this JSON structure.
     """
     
     max_retries = 3
@@ -370,56 +367,57 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
             response_text = clean_json_string(response.text)
             lesson_content = json.loads(response_text)
             
-            # Format the content with proper spacing and no duplicates
-            formatted_content = f"""## {lesson_content['title']}
+            # Validate content
+            required_keys = ["explanation", "examples", "question", "key_points"]
+            if not all(key in lesson_content for key in required_keys):
+                raise ValueError("Missing required content sections")
+            
+            # Format the explanation section with proper markdown and spacing
+            formatted_content = f"""## {topic.title}
 
 ### 📚 Understanding the Concepts
 
-"""
-            # Add sections with proper formatting
-            for section in lesson_content['sections']:
-                if section['heading'] != "Introduction":
-                    formatted_content += f"#### {section['heading']}\n"
-                formatted_content += f"{section['content']}\n\n"
-                if section['points']:
-                    for point in section['points']:
-                        formatted_content += f"* {point}\n"
-                    formatted_content += "\n"
+{lesson_content["explanation"]}
 
+### 🔍 Practical Applications
+
+"""
             # Format examples with proper bullet points
-            formatted_content += "### 🔍 Practical Applications\n\n"
-            for i, example in enumerate(lesson_content['examples'], 1):
+            for i, example in enumerate(lesson_content["examples"], 1):
                 formatted_content += f"""#### Example {i}: {example['title']}
 {example['description']}
 
 Steps:
 """
                 for step in example['steps']:
+                    # Clean up any existing numbering and ensure bullet point format
                     step = step.strip()
+                    if step[0].isdigit():
+                        step = step.split('.', 1)[1].strip() if '.' in step else step
                     formatted_content += f"* {step}\n"
                 formatted_content += "\n"
 
-            # Add understanding check
+            # Add understanding check with proper spacing
             formatted_content += f"""### 💡 Understanding Check
 
 {lesson_content['question']}
 
 #### Key Points:
 """
-            for point in lesson_content['key_points']:
+            for point in lesson_content["key_points"]:
                 formatted_content += f"* {point}\n"
             
             return {
                 "explanation": formatted_content,
-                "examples": lesson_content['examples'],
-                "question": lesson_content['question'],
-                "key_points": lesson_content['key_points']
+                "examples": lesson_content["examples"],
+                "question": lesson_content["question"],
+                "key_points": lesson_content["key_points"]
             }
             
         except Exception as e:
             if attempt == max_retries - 1:
                 st.error(f"Failed to generate teaching content after {max_retries} attempts: {str(e)}")
-                # Keep existing fallback content
+                # Return a basic formatted version if all attempts fail
                 return {
                     "explanation": f"""## {topic.title}
 
@@ -448,74 +446,6 @@ Please explain your understanding of {topic.title}.
                     "key_points": ["Understanding core concepts", "Practical applications", "Key takeaways"]
                 }
             time.sleep(1)
-
-def evaluate_response(user_response: str, expected_points: List[str], current_topic: Topic, model) -> dict:
-    """
-    Evaluate user's response against expected learning points.
-    
-    Args:
-        user_response: The user's answer text
-        expected_points: List of key points that should be covered
-        current_topic: Current topic being discussed
-        model: The AI model instance
-    
-    Returns:
-        dict: Contains feedback and complete answer
-    """
-    prompt = f"""
-    Evaluate this response about {current_topic.title}.
-    
-    User's response:
-    {user_response}
-    
-    Expected key points:
-    {" - " + "\n - ".join(expected_points)}
-    
-    Provide an evaluation in this JSON format:
-    {{
-        "feedback": "Detailed, constructive feedback on the response, highlighting strengths and areas for improvement",
-        "complete_answer": "A comprehensive explanation of the topic, incorporating all key points",
-        "understanding_level": "A number from 0-100 indicating comprehension level"
-    }}
-    
-    Make the feedback encouraging but thorough. Include specific examples from their response.
-    """
-    
-    try:
-        response = model.generate_content(prompt)
-        response_text = clean_json_string(response.text)
-        evaluation = json.loads(response_text)
-        
-        # Format the feedback and complete answer with markdown
-        formatted_feedback = f"""
-#### Feedback on Your Understanding
-{evaluation['feedback']}
-
-#### Complete Explanation
-{evaluation['complete_answer']}
-
-Understanding Level: {evaluation['understanding_level']}%
-"""
-        
-        return {
-            "feedback": formatted_feedback,
-            "complete_answer": evaluation['complete_answer'],
-            "understanding_level": int(evaluation['understanding_level'])
-        }
-        
-    except Exception as e:
-        st.error(f"Error evaluating response: {str(e)}")
-        return {
-            "feedback": """
-#### Feedback on Your Understanding
-Thank you for your response. Let's review the key points to ensure complete understanding.
-
-#### Complete Explanation
-""" + current_topic.content,
-            "complete_answer": current_topic.content,
-            "understanding_level": 50
-        }
-
 def main():
     # 1. Page Configuration
     st.set_page_config(
