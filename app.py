@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 import json
 import time
+import random
 
 @dataclass
 class Topic:
