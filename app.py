@@ -23,7 +23,7 @@ def initialize_model():
                 return None
         
         genai.configure(api_key=st.session_state.gemini_api_key)
-        return 'text-bison-001'  # Use an available model
+        return 'models/text-bison-001'  # Added 'models/' prefix
         
     except Exception as e:
         st.error(f"❌ Error initializing PaLM model: {str(e)}")
@@ -393,7 +393,7 @@ def process_text_from_file(file_content, file_type) -> str:
     try:
         if file_type == "application/pdf":
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
-            text = "\n\n".join(page.extract_text() for page in pdf_reader.pages)
+            text = "\n\n".join(page.extract_text() or '' for page in pdf_reader.pages)
             
         elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = docx.Document(io.BytesIO(file_content))
