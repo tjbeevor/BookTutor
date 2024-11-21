@@ -368,48 +368,61 @@ class DynamicTeacher:
             }]
 
     @lru_cache(maxsize=32)
-    def _generate_lesson_content(self, topic_str: str) -> str:
-        """Cached method to generate lesson content"""
-        try:
-            topic = json.loads(topic_str)
-            
-            prompt = f"""
-            Create an engaging lesson for: {topic['title']}
-
-            Key points to cover:
-            {json.dumps(topic['key_points'], indent=2)}
-
-            Content to teach from:
-            {topic['content']}
-
-            Context:
-            - Style: {topic['teaching_style']}
-            - Level: {topic['difficulty']}
-
-            Create a comprehensive lesson that:
-            1. Introduces the topic clearly
-            2. Explains each concept thoroughly with examples
-            3. Uses helpful analogies where appropriate
-            4. Provides detailed explanations
-            5. Includes practical applications
-            6. Ends with key takeaways
-
-            Use markdown formatting and emojis for engagement.
-            """
-
-            response = self.model.generate_content(
-                prompt,
-                generation_config={
-                    'temperature': 0.4,
-                    'top_p': 0.8,
-                    'top_k': 40,
-                    'max_output_tokens': 4096
+        def _generate_lesson_content(self, topic_str: str) -> str:
+            """Cached method to generate lesson content"""
+            try:
+                topic = json.loads(topic_str)
+                
+                prompt = {
+                    "role": "user",
+                    "parts": [{
+                        "text": f"""
+                        Create an engaging lesson for: {topic['title']}
+    
+                        Key points to cover:
+                        {json.dumps(topic['key_points'], indent=2)}
+    
+                        Content to teach from:
+                        {topic['content']}
+    
+                        Context:
+                        - Style: {topic['teaching_style']}
+                        - Level: {topic['difficulty']}
+    
+                        Create a comprehensive lesson that:
+                        1. Introduces the topic clearly
+                        2. Explains each concept thoroughly with examples
+                        3. Uses helpful analogies where appropriate
+                        4. Provides detailed explanations
+                        5. Includes practical applications
+                        6. Ends with key takeaways
+    
+                        Use markdown formatting and emojis for engagement.
+                        """
+                    }]
                 }
-            )
-            return response.text
-        except Exception as e:
-            st.error(f"Error in _generate_lesson_content: {str(e)}")
-            return f"Error generating lesson content: {str(e)}"
+    
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config={
+                        'temperature': 0.4,
+                        'top_p': 0.8,
+                        'top_k': 40,
+                        'max_output_tokens': 4096
+                    }
+                )
+                
+                # Properly handle the response format
+                if response.candidates:
+                    # Get all parts of the response and join them
+                    parts = response.candidates[0].content.parts
+                    return "".join(part.text for part in parts if hasattr(part, 'text'))
+                else:
+                    return "Could not generate lesson content."
+                    
+            except Exception as e:
+                st.error(f"Error in _generate_lesson_content: {str(e)}")
+                return f"Error generating lesson content: {str(e)}"
 
     def teach_topic(self, topic: Dict, user_progress: Dict) -> str:
         """Generate teaching content using cache"""
