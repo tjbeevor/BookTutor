@@ -8,6 +8,7 @@ import io
 import json
 import time
 import random
+import re
 from typing import Dict, List, Optional, Any, BinaryIO, Union
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
@@ -18,6 +19,42 @@ import os
 # Load environment variables
 load_dotenv()
 
+# Utility functions
+def clean_json_string(text: str) -> str:
+    """Clean and extract JSON string from text"""
+    json_match = re.search(r'\{[\s\S]*\}', text)
+    if not json_match:
+        raise ValueError("No JSON structure found in text")
+        
+    json_str = json_match.group()
+    
+    # Remove any markdown backticks or json indicators
+    json_str = re.sub(r'^```json\s*', '', json_str)
+    json_str = re.sub(r'\s*```$', '', json_str)
+    
+    # Fix common JSON formatting issues
+    json_str = re.sub(r'(?<=\d)"(?=\s*[,}])', '', json_str)  # Remove quotes after numbers
+    json_str = re.sub(r'(?<=true|false)"(?=\s*[,}])', '', json_str)  # Remove quotes after booleans
+    json_str = re.sub(r',\s*}', '}', json_str)  # Remove trailing commas
+    
+    return json_str
+
+def is_header_line(line: str) -> bool:
+    """Detect if a line is likely a header"""
+    line = line.strip()
+    if not line:
+        return False
+        
+    # Check for common header patterns
+    header_indicators = [
+        line.isupper(),
+        line.startswith('#'),
+        len(line.split()) <= 5 and line[0].isupper(),
+        any(line.startswith(str(i) + '.') for i in range(1, 100))
+    ]
+    
+    return any(header_indicators)
+
 # Custom Exceptions
 class DocumentProcessingError(Exception):
     """Custom exception for document processing errors"""
@@ -27,7 +64,11 @@ class UnsupportedFormatError(Exception):
     """Custom exception for unsupported file formats"""
     pass
 
-# Base Classes
+class ValidationError(Exception):
+    """Custom exception for content validation errors"""
+    pass
+
+# Base Classes and Data Classes
 @dataclass
 class Topic:
     title: str
@@ -42,6 +83,19 @@ class Topic:
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
+            
+    def add_subtopic(self, subtopic: 'Topic') -> None:
+        """Add a subtopic and set its parent"""
+        subtopic.parent = self
+        self.subtopics.append(subtopic)
+    
+    def get_all_subtopics(self) -> List['Topic']:
+        """Get all subtopics recursively"""
+        all_subtopics = []
+        for subtopic in self.subtopics:
+            all_subtopics.append(subtopic)
+            all_subtopics.extend(subtopic.get_all_subtopics())
+        return all_subtopics
 
 @dataclass
 class UserProgress:
@@ -49,12 +103,34 @@ class UserProgress:
     completed_topics: List[str] = None
     current_approach: str = "practical"
     difficulty_level: str = "beginner"
+    last_evaluation_date: Optional[float] = None
     
     def __post_init__(self):
         if self.completed_topics is None:
             self.completed_topics = []
+        if self.last_evaluation_date is None:
+            self.last_evaluation_date = time.time()
+    
+    def update_progress(self, topic_title: str, understanding_level: float) -> None:
+        """Update progress with new evaluation data"""
+        self.understanding_level = understanding_level
+        if understanding_level >= 70 and topic_title not in self.completed_topics:
+            self.completed_topics.append(topic_title)
+        self.last_evaluation_date = time.time()
+    
+    def adjust_difficulty(self) -> None:
+        """Adjust difficulty based on understanding level"""
+        if self.understanding_level >= 85:
+            self.difficulty_level = "advanced"
+        elif self.understanding_level >= 65:
+            self.difficulty_level = "intermediate"
+        else:
+            self.difficulty_level = "beginner"
 
 class BaseDocumentProcessor(ABC):
+    def __init__(self):
+        self.supported_extensions: List[str] = []
+        
     @abstractmethod
     def extract_content(self, file_obj: BinaryIO) -> Dict[str, Any]:
         """Extract content from the document"""
@@ -71,10 +147,32 @@ class BaseDocumentProcessor(ABC):
             'text': content.get('text', ''),
             'metadata': content.get('metadata', {}),
             'structure': content.get('structure', {}),
-            'type': content.get('type', 'general')
+            'type': content.get('type', 'general'),
+            'processed_date': time.time()
         }
-# Document Processors
+    
+    def process(self, file_obj: BinaryIO) -> Dict[str, Any]:
+        """Complete processing pipeline for a document"""
+        try:
+            # Extract content
+            content = self.extract_content(file_obj)
+            
+            # Validate
+            if not self.validate_content(content):
+                raise ValidationError("Invalid document content")
+                
+            # Standardize
+            return self.standardize_content(content)
+            
+        except Exception as e:
+            raise DocumentProcessingError(f"Processing error: {str(e)}")
+
+# Document Processor Implementation
 class PDFProcessor(BaseDocumentProcessor):
+    def __init__(self):
+        super().__init__()
+        self.supported_extensions = ['.pdf']
+    
     def extract_content(self, file_obj: BinaryIO) -> Dict[str, Any]:
         """Extract content from PDF files"""
         try:
@@ -93,7 +191,8 @@ class PDFProcessor(BaseDocumentProcessor):
                 'title': pdf_reader.metadata.get('/Title', 'Untitled'),
                 'author': pdf_reader.metadata.get('/Author', 'Unknown'),
                 'subject': pdf_reader.metadata.get('/Subject', ''),
-                'creation_date': pdf_reader.metadata.get('/CreationDate', '')
+                'creation_date': pdf_reader.metadata.get('/CreationDate', ''),
+                'extract_date': time.strftime('%Y-%m-%d %H:%M:%S')
             }
             
             # Process each page
@@ -112,8 +211,8 @@ class PDFProcessor(BaseDocumentProcessor):
                         if not line:
                             continue
                             
-                        # Detect if line is likely a header
-                        if self._is_header(line):
+                        # Use utility function to detect headers
+                        if is_header_line(line):
                             if current_section['title'] and current_section['content']:
                                 content['structure']['sections'].append(current_section.copy())
                             current_section = {'title': line, 'content': []}
@@ -137,28 +236,30 @@ class PDFProcessor(BaseDocumentProcessor):
 
     def validate_content(self, content: Dict[str, Any]) -> bool:
         """Validate PDF content"""
-        if not content.get('text'):
-            return False
-        if not any(text.strip() for text in content['text']):
-            return False
-        return True
-
-    def _is_header(self, line: str) -> bool:
-        """Detect if a line is likely a header"""
-        # Simple heuristics for header detection
-        line = line.strip()
-        if not line:
-            return False
+        try:
+            # Check for required fields
+            if not content.get('text'):
+                return False
+                
+            # Check for non-empty text content
+            if not any(text.strip() for text in content['text']):
+                return False
+                
+            # Check for basic structure
+            if not content.get('structure', {}).get('sections'):
+                return False
+                
+            # Check metadata
+            if not content.get('metadata', {}).get('pages'):
+                return False
+                
+            return True
             
-        # Check for common header patterns
-        header_indicators = [
-            line.isupper(),
-            line.startswith('#'),
-            len(line.split()) <= 5 and line[0].isupper(),
-            any(line.startswith(str(i) + '.') for i in range(1, 100))
-        ]
-        
-        return any(header_indicators)
+        except Exception as e:
+            st.warning(f"Validation error: {str(e)}")
+            return False
+
+#Hello world
 
 class DocxProcessor(BaseDocumentProcessor):
     def extract_content(self, file_obj: BinaryIO) -> Dict[str, Any]:
