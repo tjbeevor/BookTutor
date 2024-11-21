@@ -616,14 +616,19 @@ class TechnicalTemplate(TutorialTemplate):
         """Template for technical content with dynamic handling based on document content"""
         difficulty = self._adjust_difficulty(user_performance)
         
-        # Extract code examples from topic if they exist
-        code_examples = topic.metadata.get('code_examples', [])
-        practice_exercises = topic.metadata.get('practice', [])
-        key_points = topic.metadata.get('key_points', [])
+        # Extract code examples and practice exercises
+        practice_exercises = []
+        if isinstance(topic.metadata.get('practice'), list):
+            practice_exercises = [
+                {
+                    'title': f'Practice Exercise {i+1}',
+                    'description': exercise
+                }
+                for i, exercise in enumerate(topic.metadata.get('practice', []))
+            ]
         
-        # Create a more comprehensive content structure
-        content = {
-            "content": f"""
+        # Create the content structure
+        content = f"""
 # {topic.title}
 
 ## Overview 📋
@@ -631,45 +636,22 @@ class TechnicalTemplate(TutorialTemplate):
 
 ## Learning Objectives 🎯
 {"".join(f"- {obj}\n" for obj in self._generate_objectives(topic, difficulty))}
-"""
-        }
-        
-        # Add prerequisites section if they exist in the topic metadata
-        if topic.metadata.get('prerequisites'):
-            content["content"] += f"""
-## Prerequisites 📚
-{"".join(f"- {prereq}\n" for prereq in topic.metadata['prerequisites'])}
-"""
-        
-        # Add detailed explanation
-        content["content"] += f"""
+
 ## Detailed Explanation 📝
 {self._generate_explanation(topic, difficulty)}
 """
         
-        # Add code examples section only if code examples exist in the content
-        if code_examples:
-            content["content"] += "\n## Code Examples 💻\n"
-            for example in code_examples:
-                content["content"] += f"""
-### {example.get('title', 'Example')}
-```{example.get('language', '')}
-{example.get('code', '')}
-```
-"""
-                
-        # Add practice exercises section
+        # Add practice exercises section if available
         if practice_exercises:
-            content["content"] += "\n## Practice Exercises ✍️\n"
+            content += "\n## Practice Exercises ✍️\n"
             for exercise in practice_exercises:
-                content["content"] += f"""
-### {exercise.get('title', 'Exercise')}
-{exercise.get('description', '')}
+                content += f"""
+### {exercise['title']}
+{exercise['description']}
 """
 
         return {
-            "content": content["content"],
-            "code_examples": code_examples,
+            "content": content,
             "practice_exercises": practice_exercises,
             "metadata": {
                 "difficulty": difficulty,
