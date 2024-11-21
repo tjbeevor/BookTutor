@@ -242,38 +242,62 @@ class DynamicTeacher:
         self.model = model
         self._content_cache = {}
 
-    def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
-        """Initial document analysis with increased chunk size"""
+def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
+        """Initial document analysis with comprehensive topic breakdown"""
         try:
             text_content = content['text']
             
+            # Process a larger chunk of text, broken into sections
+            text_chunks = [text_content[i:i+8000] for i in range(0, len(text_content), 8000)]
+            first_chunk = text_chunks[0] if text_chunks else ""
+            
             prompt = {
                 "role": "user",
-                "parts": [f"""Analyze this educational content and create a detailed learning structure.
+                "parts": [f"""You are an expert curriculum designer. Analyze this educational content and create a detailed learning structure with comprehensive topic breakdown.
                 
                 Content to analyze:
-                {text_content[:8000]}...
+                {first_chunk}
 
-                Create a learning structure with clear topics and key points. Format as JSON:
+                Additional instructions:
+                1. Break down the content into 8-12 distinct topics
+                2. Ensure topics flow logically from foundational to advanced concepts
+                3. Each topic should be specific and focused
+                4. Include both theoretical and practical aspects where relevant
+
+                Create a learning structure following this exact JSON format:
                 {{
                     "topics": [
                         {{
-                            "title": "Clear topic title",
-                            "key_points": ["Detailed point 1", "Detailed point 2", "Detailed point 3", "Detailed point 4", "Detailed point 5"],
+                            "title": "Clear and specific topic title",
+                            "key_points": [
+                                "Detailed key point 1",
+                                "Detailed key point 2",
+                                "Detailed key point 3",
+                                "Detailed key point 4",
+                                "Detailed key point 5"
+                            ],
                             "content": "Relevant content section",
                             "teaching_style": "conceptual",
-                            "difficulty": "beginner"
+                            "difficulty": "beginner|intermediate|advanced"
                         }}
                     ]
-                }}"""]
+                }}
+
+                Requirements:
+                - Create at least 8 topics
+                - Each topic must have exactly 5 key points
+                - Make topics specific rather than general
+                - Ensure progressive difficulty across topics
+                - Include practical applications where relevant"""]
             }
 
             response = self.model.generate_content(
                 prompt,
                 generation_config={
-                    'temperature': 0.5,
+                    'temperature': 0.4,
                     'top_p': 0.8,
-                    'top_k': 40
+                    'top_k': 40,
+                    'max_output_tokens': 4096  # Increased token limit
                 }
             )
 
@@ -283,7 +307,7 @@ class DynamicTeacher:
                 json_match = response_text[response_text.find('{'):response_text.rfind('}')+1]
                 structure = json.loads(json_match)
                 
-                # Validate and sanitize the structure
+                # Validate and enhance the structure
                 if not isinstance(structure, dict) or 'topics' not in structure:
                     raise ValueError("Invalid JSON structure")
                 
@@ -291,11 +315,23 @@ class DynamicTeacher:
                 if not isinstance(topics, list):
                     raise ValueError("Topics must be a list")
                 
+                # Process additional chunks if available to enhance content
+                if len(text_chunks) > 1:
+                    for topic in topics:
+                        # Find relevant content from other chunks
+                        topic_content = topic['content']
+                        for chunk in text_chunks[1:]:
+                            if any(kp.lower() in chunk.lower() for kp in topic['key_points']):
+                                topic_content += "\n\n" + chunk[:1000]  # Add relevant sections
+                        topic['content'] = topic_content
+                
                 # Ensure each topic has the required fields
                 for topic in topics:
                     if not isinstance(topic, dict):
                         continue
-                    topic['key_points'] = topic.get('key_points', [])
+                    # Ensure minimum of 5 key points
+                    while len(topic.get('key_points', [])) < 5:
+                        topic.setdefault('key_points', []).append(f"Additional key point for {topic['title']}")
                     topic['content'] = topic.get('content', '')
                     topic['teaching_style'] = topic.get('teaching_style', 'conceptual')
                     topic['difficulty'] = topic.get('difficulty', 'beginner')
@@ -307,8 +343,14 @@ class DynamicTeacher:
                 # Fallback structure
                 return [{
                     'title': 'Document Overview',
-                    'key_points': ['Key concepts from the document'],
-                    'content': text_content[:4000],
+                    'key_points': [
+                        'Key concepts from the document',
+                        'Main ideas and themes',
+                        'Important principles covered',
+                        'Practical applications',
+                        'Learning objectives'
+                    ],
+                    'content': text_content[:8000],
                     'teaching_style': 'conceptual',
                     'difficulty': 'beginner'
                 }]
@@ -317,50 +359,17 @@ class DynamicTeacher:
             st.error(f"Error in document analysis: {str(e)}")
             return [{
                 'title': 'Document Overview',
-                'key_points': ['Document analysis needs review'],
+                'key_points': [
+                    'Document analysis needs review',
+                    'Content structure pending',
+                    'Topics to be organized',
+                    'Key points to be extracted',
+                    'Learning path to be defined'
+                ],
                 'content': text_content[:8000] if text_content else 'Content unavailable',
                 'teaching_style': 'conceptual',
                 'difficulty': 'beginner'
             }]
-
-    @lru_cache(maxsize=32)
-    def _generate_lesson_content(self, topic_str: str) -> str:
-        """Cached method to generate lesson content"""
-        topic = json.loads(topic_str)
-        
-        prompt = f"""
-        Create an engaging lesson for: {topic['title']}
-
-        Key points to cover:
-        {json.dumps(topic['key_points'], indent=2)}
-
-        Content to teach from:
-        {topic['content']}
-
-        Context:
-        - Style: {topic['teaching_style']}
-        - Level: {topic['difficulty']}
-
-        Create a comprehensive lesson that:
-        1. Introduces the topic clearly
-        2. Explains each concept thoroughly with examples
-        3. Uses helpful analogies where appropriate
-        4. Provides detailed explanations
-        5. Includes practical applications
-        6. Ends with key takeaways
-
-        Use markdown formatting and emojis for engagement.
-        """
-
-        response = self.model.generate_content(
-            prompt,
-            generation_config={
-                'temperature': 0.5,
-                'top_p': 0.8,
-                'top_k': 40
-            }
-        )
-        return response.text
 
     def teach_topic(self, topic: Dict, user_progress: Dict) -> str:
         """Generate teaching content using cache"""
