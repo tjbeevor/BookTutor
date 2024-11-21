@@ -35,9 +35,11 @@ class EnhancedTeacher:
         self.model = model
 
     def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
-        """Enhanced document analysis with improved prompt engineering"""
         try:
             text_content = content['text']
+            if text_content is None:
+                text_content = ''  # Ensure text_content is never None
+                
             sections = self._split_into_chunks(text_content)
             all_topics = []
             
@@ -226,19 +228,22 @@ class EnhancedTeacher:
 
     def _validate_topic(self, topic: Dict) -> bool:
         """Validate topic structure with detailed feedback"""
+        # First check if content exists and is None
+        if 'content' in topic and topic['content'] is None:
+            topic['content'] = ''  # Set empty string instead of None
+        
         required_fields = [
-            'title',
-            'learning_objectives',
-            'key_points',
+            'title', 
+            'learning_objectives', 
+            'key_points', 
             'content'
         ]
         
         missing_fields = [field for field in required_fields if field not in topic]
-        
         if missing_fields:
             st.warning(f"Missing required fields: {', '.join(missing_fields)}")
             return False
-        
+    
         # Validate field types
         type_checks = {
             'title': str,
@@ -249,9 +254,13 @@ class EnhancedTeacher:
         
         for field, expected_type in type_checks.items():
             if field in topic and not isinstance(topic[field], expected_type):
-                st.warning(f"Field '{field}' has incorrect type. Expected {expected_type}, got {type(topic[field])}")
-                return False
-        
+                # Convert None to empty string for content field
+                if field == 'content' and topic[field] is None:
+                    topic[field] = ''
+                else:
+                    st.warning(f"Field '{field}' has incorrect type. Expected {expected_type}, got {type(topic[field])}")
+                    return False
+                    
         return True
 
     def _enhance_topic(self, topic: Dict, original_section: str) -> Dict:
