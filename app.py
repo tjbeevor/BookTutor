@@ -37,7 +37,7 @@ class EnhancedTeacher:
         self.model = model
 
     def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
-        """Enhanced document analysis with comprehensive content processing and fixed JSON handling"""
+        """Enhanced document analysis with improved error handling and JSON processing"""
         try:
             text_content = content['text']
             sections = self._split_into_chunks(text_content)
@@ -47,12 +47,13 @@ class EnhancedTeacher:
                 prompt = f"""
                 You are an expert curriculum designer. Create a detailed learning module from this content. 
                 Focus on extracting meaningful educational content while preserving the original material's structure.
-                Output ONLY valid JSON with no additional text.
-
+                
+                IMPORTANT: Ensure your response is valid JSON with no trailing commas or formatting errors.
+                
                 Content to analyze:
                 {section[:4000]}
-
-                JSON Response Format:
+    
+                Respond with ONLY the following JSON structure:
                 {{
                     "title": "Clear and specific section title",
                     "learning_objectives": [
@@ -78,23 +79,15 @@ class EnhancedTeacher:
                                     "Option C",
                                     "Option D"
                                 ],
-                                "correct_answer": "Correct option",
+                                "correct_answer": "Option A",
                                 "explanation": "Why this answer is correct"
                             }}
                         ]
                     }},
-                    "real_world_applications": [
-                        "Application 1",
-                        "Application 2"
-                    ],
-                    "additional_resources": [
-                        "Resource 1",
-                        "Resource 2"
-                    ],
-                    "difficulty": "beginner/intermediate/advanced",
-                    "estimated_time": "Time estimate"
+                    "difficulty": "beginner",
+                    "estimated_time": "30 minutes"
                 }}"""
-
+    
                 try:
                     response = self.model.generate_content(
                         prompt,
@@ -104,26 +97,33 @@ class EnhancedTeacher:
                             'top_k': 40
                         }
                     )
-
-                    # Clean and parse response
+    
+                    # Clean and parse response with improved error handling
                     response_text = self._clean_json_text(response.text)
-                    topic = json.loads(response_text)
-
+                    try:
+                        topic = json.loads(response_text)
+                    except json.JSONDecodeError:
+                        st.warning(f"Failed to parse section response. Using fallback structure.")
+                        topic = self._create_fallback_structure(section[:1000])
+    
                     if self._validate_topic(topic):
-                        # Post-process topic to enhance content
                         topic = self._enhance_topic(topic, section)
                         all_topics.append(topic)
                     else:
-                        st.warning(f"Skipped invalid topic structure")
-
+                        fallback = self._create_fallback_structure(section[:1000])
+                        all_topics.append(fallback)
+                        st.warning(f"Using fallback structure for section due to validation failure")
+    
                 except Exception as e:
                     st.warning(f"Processing error for section: {str(e)}")
+                    fallback = self._create_fallback_structure(section[:1000])
+                    all_topics.append(fallback)
                     continue
-
+    
             # Post-process all topics to ensure coherent flow
             processed_topics = self._post_process_topics(all_topics) if all_topics else [self._create_fallback_structure(text_content)]
             return processed_topics
-
+    
         except Exception as e:
             st.error(f"Error in document analysis: {str(e)}")
             return [self._create_fallback_structure(text_content)]
@@ -131,8 +131,9 @@ class EnhancedTeacher:
     def _clean_json_text(self, text: str) -> str:
         """Clean and fix common JSON formatting issues"""
         try:
-            # Remove any markdown code block markers
+            # Remove any markdown code block markers and extra whitespace
             text = text.replace('```json', '').replace('```', '')
+            text = text.strip()
             
             # Find the first '{' and last '}'
             start = text.find('{')
@@ -140,15 +141,41 @@ class EnhancedTeacher:
             
             if start != -1 and end != -1:
                 text = text[start:end+1]
-            
+                
             # Fix common JSON formatting issues
-            text = text.replace('\n', ' ')  # Remove newlines
-            text = ' '.join(text.split())   # Normalize spacing
+            text = text.replace('\\"', '"')  # Fix escaped quotes
+            text = text.replace('\n', ' ')   # Remove newlines
+            text = ' '.join(text.split())    # Normalize spacing
             
+            # Validate JSON structure before returning
+            json.loads(text)  # Test if it's valid JSON
             return text
+            
+        except json.JSONDecodeError as e:
+            # If JSON is invalid, try to fix common issues
+            try:
+                # Replace single quotes with double quotes
+                text = text.replace("'", '"')
+                
+                # Fix missing quotes around property names
+                import re
+                text = re.sub(r'(\s*{?\s*)(\w+)(\s*:)', r'\1"\2"\3', text)
+                
+                # Fix trailing commas in arrays and objects
+                text = re.sub(r',(\s*[}\]])', r'\1', text)
+                
+                # Validate the fixed JSON
+                json.loads(text)
+                return text
+                
+            except Exception:
+                # If all fixes fail, create a minimal valid JSON structure
+                st.warning(f"Failed to parse JSON response. Creating fallback structure.")
+                return json.dumps(self._create_fallback_structure("Content parsing error"))
+    
         except Exception as e:
             st.error(f"Error cleaning JSON text: {str(e)}")
-            raise
+            return json.dumps(self._create_fallback_structure("Content parsing error"))
 
     def _split_into_chunks(self, text: str) -> List[str]:
         """Split content into logical sections"""
@@ -318,19 +345,24 @@ class EnhancedTeacher:
             return "Error generating lesson content."
 
     def _create_fallback_structure(self, content: str) -> Dict:
-        """Create basic structure when parsing fails"""
+        """Create more informative fallback structure when parsing fails"""
         return {
-            'title': 'Content Overview',
-            'learning_objectives': ['Understand the main concepts presented'],
-            'key_points': ['Key concepts from the material'],
-            'content': content[:1000],
-            'practical_exercises': ['Review and summarize the main points'],
+            'title': 'Content Section',
+            'learning_objectives': ['Understand the key concepts in this section'],
+            'key_points': ['Review the main points presented in this material'],
+            'content': content[:1000] + ("..." if len(content) > 1000 else ""),
+            'practical_exercises': ['Summarize the main concepts presented'],
             'knowledge_check': {
                 'questions': [{
-                    'question': 'What is the main topic covered?',
-                    'options': ['Review the content to answer'],
-                    'correct_answer': 'Review the content to answer',
-                    'explanation': 'Please review the material carefully'
+                    'question': 'What are the main topics covered in this section?',
+                    'options': [
+                        'Review the content to identify key topics',
+                        'Analyze the main concepts presented',
+                        'Summarize the key points',
+                        'All of the above'
+                    ],
+                    'correct_answer': 'All of the above',
+                    'explanation': 'A thorough review of the content will help identify and understand the key topics.'
                 }]
             },
             'difficulty': 'beginner',
