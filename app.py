@@ -310,7 +310,7 @@ def main():
             state = st.session_state.tutorial_state
             current_topic = state.get_current_topic()
 
-            if current_topic:
+            if current_topic and not current_topic.completed:
                 # Display conversation history
                 for message in state.conversation_history:
                     with st.chat_message(message["role"]):
@@ -386,26 +386,20 @@ def main():
                         "content": feedback
                     })
                     
-                    # Mark current topic as completed and advance
-                    current_topic.completed = True
-                    if state.advance_topic():
-                        time.sleep(1)  # Small delay before rerun
-                        st.rerun()
-                    else:
-                        st.balloons()
-                        st.success("🎉 Congratulations! You've completed the tutorial!")
-            else:
-                st.success("🎉 Congratulations! You've completed all topics!")
+                    if evaluation['understanding_level'] >= 70:
+                        current_topic.completed = True
+                        if state.advance_topic():
+                            st.rerun()
+                        else:
+                            st.balloons()
+                            st.success("🎉 Congratulations! You've completed the tutorial!")
     
     with col2:
         if st.session_state.tutorial_state.topics:
             st.markdown("### 📊 Progress")
             completed = sum(1 for t in state.topics if t.completed)
-            total = len(state.topics)
-            if total > 0:  # Prevent division by zero
-                progress = int((completed / total) * 100)
-                st.progress(progress)
-                st.write(f"Completed: {completed}/{total} topics")
+            progress = int((completed / len(state.topics)) * 100)
+            st.progress(progress)
             
             st.markdown("### 📑 Topics")
             for i, topic in enumerate(state.topics, 1):
