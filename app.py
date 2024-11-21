@@ -680,13 +680,26 @@ Practice Project:
         return exercises
 
 class TheoreticalTemplate(TutorialTemplate):
-    def create_tutorial(self, content: Dict[str, Any]) -> List[Topic]:
-    """Create a new tutorial from content"""
-    topics = self.content_analyzer.analyze_content(content)
-    if not topics:
-        st.error("Could not generate tutorial content from document")
-        return []
-    return topics
+    def create_tutorial_content(self, topic: Topic, user_performance: float) -> Dict[str, Any]:
+        """Create tutorial content based on theoretical approach"""
+        # Previous incorrect create_tutorial method has been removed
+        difficulty = self._adjust_difficulty(user_performance)
+        return {
+            "content": {
+                "title": topic.title,
+                "theory": self._generate_theory(topic),
+                "concepts": self._generate_concepts(topic, difficulty),
+                "examples": self._generate_examples(topic, difficulty)
+            },
+            "difficulty": difficulty
+        }
+    
+    def _adjust_difficulty(self, user_performance: float) -> str:
+        if user_performance >= 85:
+            return "advanced"
+        elif user_performance >= 65:
+            return "intermediate"
+        return "beginner"
 
 class PracticalTemplate(TutorialTemplate):
     def create_tutorial_content(self, topic: Topic, user_performance: float) -> Dict[str, Any]:
