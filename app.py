@@ -202,7 +202,16 @@ def process_text_from_file(file_content, file_type) -> str:
 def process_uploaded_file(uploaded_file) -> Dict:
     """Process uploaded file and extract content"""
     try:
+        # Check file size (15MB limit)
+        MAX_FILE_SIZE = 15 * 1024 * 1024  # 15MB in bytes
+        
+        # Get file size
         file_content = uploaded_file.read()
+        file_size = len(file_content)
+        
+        if file_size > MAX_FILE_SIZE:
+            raise Exception(f"File size ({file_size / 1024 / 1024:.1f}MB) exceeds the maximum limit of 15MB")
+            
         text_content = process_text_from_file(file_content, uploaded_file.type)
         
         return {
