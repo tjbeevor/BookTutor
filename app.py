@@ -360,13 +360,14 @@ class ContentAnalyzer:
             
             try:
                 structure = json.loads(response.text)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
                 # If JSON parsing fails, try to extract JSON from the response
+                import re
                 match = re.search(r'\{[\s\S]*\}', response.text)
                 if match:
                     structure = json.loads(match.group())
                 else:
-                    raise ValueError("Could not parse AI response as JSON")
+                    raise ValueError(f"Could not parse AI response as JSON: {e}")
 
             # Convert AI response to topics
             topics = []
@@ -375,7 +376,7 @@ class ContentAnalyzer:
                 topic = Topic(
                     title=lesson.get('title', 'Untitled Topic'),
                     content=lesson.get('content', ''),
-                    subtopics=[],
+                    subtopics=[],  # Initialize empty subtopics list
                     metadata={
                         'key_points': lesson.get('key_points', []),
                         'practice': lesson.get('practice', []),
@@ -394,15 +395,38 @@ class ContentAnalyzer:
 
         except Exception as e:
             st.warning(f"Error analyzing content: {str(e)}")
-            # Only fall back if absolutely necessary
-            if not content or not content.get('text'):
-                return self._create_fallback_structure()
-            
-            # Try to create basic topics from sections
+            # Fall back to basic topic structure if AI analysis fails
             return self._create_basic_topics_from_sections(content)
 
+    def _detect_content_type(self, content: Dict[str, Any]) -> str:
+        """Detect the type of content based on its characteristics"""
+        # Check for code-heavy content
+        code_indicators = ['def ', 'class ', 'import ', 'return ', 'function', 'method']
+        text_content = ' '.join(content['text']) if isinstance(content['text'], list) else content['text']
+        
+        # Count code-related keywords
+        code_keyword_count = sum(1 for indicator in code_indicators if indicator in text_content.lower())
+        
+        # Check for code blocks in the content
+        has_code_blocks = bool(content.get('code_blocks', []))
+        
+        # Calculate the ratio of lines that might be code
+        total_lines = len(text_content.split('\n'))
+        code_like_lines = len([line for line in text_content.split('\n') 
+                             if any(ind in line for ind in code_indicators)])
+        code_ratio = code_like_lines / total_lines if total_lines > 0 else 0
+        
+        # Decision logic for content type
+        if has_code_blocks or code_ratio > 0.2 or code_keyword_count > 5:
+            return 'technical'
+        elif any(keyword in text_content.lower() 
+                for keyword in ['theory', 'concept', 'principle', 'define', 'explain']):
+            return 'theoretical'
+        else:
+            return 'practical'
+
     def _find_relevant_sections(self, topic_title: str, sections: List[Dict]) -> List[Dict]:
-        """Find sections relevant to a topic title"""
+        """Find sections that are relevant to a topic title"""
         relevant_sections = []
         for section in sections:
             # Check if section title is similar to topic title
@@ -465,6 +489,20 @@ class ContentAnalyzer:
                 key_points.append(sentence)
                 
         return key_points[:5]  # Return up to 5 key points
+
+    def _create_fallback_structure(self) -> List[Topic]:
+        """Create a basic fallback topic structure"""
+        return [Topic(
+            title="Introduction",
+            content="Basic overview of the content.",
+            subtopics=[],
+            metadata={
+                'key_points': ['Basic understanding required'],
+                'practice': ['Review the main concepts'],
+                'difficulty': 'beginner',
+                'content_type': 'practical'
+            }
+        )]
 
 # Tutorial Generation Templates
 class TutorialTemplate(ABC):
