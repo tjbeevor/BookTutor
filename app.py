@@ -321,201 +321,57 @@ class ContentAnalyzer:
     def analyze_content(self, content: Dict[str, Any]) -> List[Topic]:
         """Analyze content and create topic structure"""
         try:
-            # Detect content characteristics
-            content_type = self._detect_content_type(content)
-            complexity = self._assess_complexity(content)
-            structure = self._analyze_structure(content)
+            # Extract the actual text content
+            text_content = ' '.join(content['text']) if isinstance(content['text'], list) else content['text']
             
-            # Generate initial topics using AI
-            topics = self._generate_topics(content, content_type, complexity)
+            # Get document structure
+            sections = content.get('structure', {}).get('sections', [])
             
-            # Enhance topics with metadata and structure
-            enhanced_topics = self._enhance_topics(topics, structure)
-            
-            return enhanced_topics
-            
-        except Exception as e:
-            st.error(f"Error analyzing content: {str(e)}")
-            return self._create_fallback_structure()
+            if not text_content or not sections:
+                raise ValueError("No content or sections found in document")
 
-    def _detect_content_type(self, content: Dict[str, Any]) -> str:
-        """Detect the type of content based on text analysis"""
-        text = ' '.join(content['text']) if isinstance(content['text'], list) else content['text']
-        
-        # Keyword sets for different content types
-        keywords = {
-            'technical': {
-                'code', 'implementation', 'function', 'class', 'method',
-                'algorithm', 'programming', 'database', 'API', 'system',
-                'technical', 'software', 'development', 'framework'
-            },
-            'theoretical': {
-                'theory', 'concept', 'principle', 'hypothesis', 'analysis',
-                'research', 'study', 'methodology', 'framework', 'model',
-                'approach', 'perspective', 'paradigm'
-            },
-            'practical': {
-                'guide', 'tutorial', 'step', 'practice', 'example',
-                'application', 'use case', 'implementation', 'hands-on',
-                'exercise', 'workshop', 'demonstration'
-            }
-        }
-        
-        # Calculate scores for each content type
-        scores = {}
-        text_lower = text.lower()
-        for content_type, keyword_set in keywords.items():
-            score = sum(1 for keyword in keyword_set if keyword in text_lower)
-            scores[content_type] = score / len(keyword_set)  # Normalize score
-            
-        # Return the content type with highest score
-        return max(scores.items(), key=lambda x: x[1])[0]
+            # Create a more specific prompt for the AI
+            prompt = f"""
+            Analyze this educational content and create a structured tutorial outline.
+            The content is about: {text_content[:200]}...
 
-    def _assess_complexity(self, content: Dict[str, Any]) -> str:
-        """Assess content complexity using various metrics"""
-        text = ' '.join(content['text']) if isinstance(content['text'], list) else content['text']
-        
-        # Calculate complexity metrics
-        metrics = {
-            'avg_word_length': self._calculate_avg_word_length(text),
-            'avg_sentence_length': self._calculate_avg_sentence_length(text),
-            'technical_term_density': self._calculate_technical_term_density(text),
-            'structure_complexity': self._calculate_structure_complexity(content)
-        }
-        
-        # Calculate overall complexity score
-        complexity_score = (
-            metrics['avg_word_length'] * 0.3 +
-            metrics['avg_sentence_length'] * 0.3 +
-            metrics['technical_term_density'] * 0.2 +
-            metrics['structure_complexity'] * 0.2
-        )
-        
-        # Map score to difficulty level
-        if complexity_score > 0.7:
-            return "advanced"
-        elif complexity_score > 0.4:
-            return "intermediate"
-        else:
-            return "beginner"
+            Document sections:
+            {json.dumps(sections, indent=2)}
 
-    def _calculate_avg_word_length(self, text: str) -> float:
-        words = text.split()
-        if not words:
-            return 0
-        return sum(len(word) for word in words) / len(words)
+            Create a detailed learning structure with the following JSON format:
+            {{
+                "lessons": [
+                    {{
+                        "title": "Specific topic title from the content",
+                        "content": "Detailed explanation using actual content from the document",
+                        "key_points": ["Key points extracted from the document"],
+                        "practice": ["Practice items based on the content"],
+                        "difficulty": "beginner|intermediate|advanced based on content complexity"
+                    }}
+                ]
+            }}
 
-    def _calculate_avg_sentence_length(self, text: str) -> float:
-        sentences = text.split('.')
-        if not sentences:
-            return 0
-        return sum(len(sentence.split()) for sentence in sentences) / len(sentences)
+            Base your response entirely on the provided document content.
+            Each lesson should correspond to major sections or concepts from the document.
+            """
 
-    def _calculate_technical_term_density(self, text: str) -> float:
-        # List of common technical terms
-        technical_terms = {
-            'algorithm', 'function', 'method', 'class', 'object',
-            'system', 'process', 'database', 'interface', 'api',
-            'framework', 'architecture', 'protocol', 'module', 'component'
-        }
-        
-        words = text.lower().split()
-        if not words:
-            return 0
-        return sum(1 for word in words if word in technical_terms) / len(words)
-
-    def _calculate_structure_complexity(self, content: Dict[str, Any]) -> float:
-        # Analyze content structure complexity
-        structure = content.get('structure', {})
-        sections = structure.get('sections', [])
-        
-        if not sections:
-            return 0
-            
-        # Calculate structural metrics
-        depth = max(self._calculate_section_depth(section) for section in sections)
-        breadth = len(sections)
-        
-        # Normalize metrics
-        normalized_depth = min(depth / 5, 1)  # Cap at depth of 5
-        normalized_breadth = min(breadth / 10, 1)  # Cap at 10 sections
-        
-        return (normalized_depth + normalized_breadth) / 2
-
-    def _calculate_section_depth(self, section: Dict[str, Any], current_depth: int = 1) -> int:
-        """Calculate the depth of nested sections"""
-        if not isinstance(section, dict):
-            return current_depth
-            
-        subsections = section.get('subsections', [])
-        if not subsections:
-            return current_depth
-            
-        return max(self._calculate_section_depth(subsec, current_depth + 1) 
-                  for subsec in subsections)
-
-    def _analyze_structure(self, content: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze document structure for topic organization"""
-        structure = content.get('structure', {})
-        
-        # Extract sections and their relationships
-        sections = structure.get('sections', [])
-        analyzed_structure = {
-            'main_topics': [],
-            'relationships': [],
-            'hierarchy': {}
-        }
-        
-        # Process sections
-        for i, section in enumerate(sections):
-            analyzed_structure['main_topics'].append({
-                'title': section.get('title', f'Section {i+1}'),
-                'content': section.get('content', []),
-                'importance': self._assess_section_importance(section)
-            })
-            
-            # Find relationships between sections
-            for j in range(i + 1, len(sections)):
-                relationship = self._find_section_relationship(section, sections[j])
-                if relationship:
-                    analyzed_structure['relationships'].append(relationship)
-                    
-        # Build topic hierarchy
-        analyzed_structure['hierarchy'] = self._build_topic_hierarchy(sections)
-        
-        return analyzed_structure
-
-    def _assess_section_importance(self, section: Dict[str, Any]) -> float:
-        """Assess the importance of a section based on various factors"""
-        factors = {
-            'content_length': len(' '.join(section.get('content', []))),
-            'has_subsections': bool(section.get('subsections')),
-            'referenced_by_others': False  # Could be enhanced with cross-reference analysis
-        }
-        
-        # Calculate importance score (0-1)
-        importance = (
-            min(factors['content_length'] / 1000, 1) * 0.6 +
-            (0.3 if factors['has_subsections'] else 0) +
-            (0.1 if factors['referenced_by_others'] else 0)
-        )
-        
-        return importance
-
-    def _generate_topics(self, content: Dict[str, Any], content_type: str, 
-                        complexity: str) -> List[Topic]:
-        """Generate topics using AI model"""
-        try:
-            # Create prompt for AI
-            prompt = self._create_analysis_prompt(content, content_type, complexity)
-            
             # Get AI response
             response = self.model.generate_content(prompt)
-            structure = json.loads(clean_json_string(response.text))
             
+            try:
+                structure = json.loads(response.text)
+            except json.JSONDecodeError:
+                # If JSON parsing fails, try to extract JSON from the response
+                match = re.search(r'\{[\s\S]*\}', response.text)
+                if match:
+                    structure = json.loads(match.group())
+                else:
+                    raise ValueError("Could not parse AI response as JSON")
+
             # Convert AI response to topics
             topics = []
             for lesson in structure.get('lessons', []):
+                # Create topic with actual content from the document
                 topic = Topic(
                     title=lesson.get('title', 'Untitled Topic'),
                     content=lesson.get('content', ''),
@@ -523,79 +379,92 @@ class ContentAnalyzer:
                     metadata={
                         'key_points': lesson.get('key_points', []),
                         'practice': lesson.get('practice', []),
-                        'difficulty': lesson.get('difficulty', complexity),
-                        'content_type': content_type
+                        'difficulty': lesson.get('difficulty', 'intermediate'),
+                        'content_type': self._detect_content_type(content),
+                        'source_sections': self._find_relevant_sections(lesson.get('title', ''), sections)
                     }
                 )
                 topics.append(topic)
-                
+
+            # If no topics were created, raise an exception
+            if not topics:
+                raise ValueError("No topics could be generated from the content")
+
             return topics
-            
+
         except Exception as e:
-            st.warning(f"Error generating topics: {str(e)}")
-            return self._create_fallback_structure()
+            st.warning(f"Error analyzing content: {str(e)}")
+            # Only fall back if absolutely necessary
+            if not content or not content.get('text'):
+                return self._create_fallback_structure()
+            
+            # Try to create basic topics from sections
+            return self._create_basic_topics_from_sections(content)
 
-    def _create_analysis_prompt(self, content: Dict[str, Any], content_type: str, 
-                              complexity: str) -> str:
-        """Create prompt for AI analysis"""
-        return f"""
-        Analyze this {content_type} content with {complexity} complexity level.
-        Create a learning structure with clear topics and subtopics.
-        
-        Return a JSON object with this structure:
-        {{
-            "lessons": [
-                {{
-                    "title": "Topic Title",
-                    "content": "Main content and explanation",
-                    "key_points": ["Key Point 1", "Key Point 2"],
-                    "practice": ["Practice Item 1", "Practice Item 2"],
-                    "difficulty": "{complexity}"
-                }}
-            ]
-        }}
-        
-        Content to analyze:
-        {' '.join(content['text']) if isinstance(content['text'], list) else content['text']}
-        """
+    def _find_relevant_sections(self, topic_title: str, sections: List[Dict]) -> List[Dict]:
+        """Find sections relevant to a topic title"""
+        relevant_sections = []
+        for section in sections:
+            # Check if section title is similar to topic title
+            if (section.get('title') and 
+                self._calculate_similarity(section['title'].lower(), topic_title.lower()) > 0.5):
+                relevant_sections.append(section)
+        return relevant_sections
 
-    
-    def _create_fallback_structure(self) -> List[Topic]:
-        """Create a basic topic structure when analysis fails"""
-        return [Topic(
-            title="Introduction to the Subject",
-            content="Basic introduction to the subject matter.",
-            subtopics=[],
-            metadata={
-                'key_points': ['Understand basic concepts'],
-                'practice': ['Review the material'],
-                'difficulty': 'beginner',
-                'content_type': 'general'
-            }
-        )]
-
-    def _enhance_topics(self, topics: List[Topic], structure: Dict[str, Any]) -> List[Topic]:
-        """Enhance topics with structural information and relationships"""
-        # Map topics to structural elements
-        topic_map = {topic.title: topic for topic in topics}
+    def _calculate_similarity(self, str1: str, str2: str) -> float:
+        """Calculate simple string similarity"""
+        # Convert strings to sets of words
+        set1 = set(str1.split())
+        set2 = set(str2.split())
         
-        # Add relationships and hierarchy information
-        for relationship in structure.get('relationships', []):
-            source = relationship.get('source')
-            target = relationship.get('target')
-            if source in topic_map and target in topic_map:
-                if 'relationships' not in topic_map[source].metadata:
-                    topic_map[source].metadata['relationships'] = []
-                topic_map[source].metadata['relationships'].append(relationship)
+        # Calculate Jaccard similarity
+        intersection = len(set1.intersection(set2))
+        union = len(set1.union(set2))
+        
+        return intersection / union if union > 0 else 0
+
+    def _create_basic_topics_from_sections(self, content: Dict[str, Any]) -> List[Topic]:
+        """Create basic topics from document sections when AI analysis fails"""
+        topics = []
+        sections = content.get('structure', {}).get('sections', [])
+        
+        for section in sections:
+            if section.get('title') and section.get('content'):
+                topic = Topic(
+                    title=section['title'],
+                    content='\n'.join(section['content']) if isinstance(section['content'], list) 
+                           else section['content'],
+                    subtopics=[],
+                    metadata={
+                        'key_points': self._extract_key_points(section['content']),
+                        'practice': [f"Explain the concept of {section['title']}"],
+                        'difficulty': 'intermediate',
+                        'content_type': self._detect_content_type(content)
+                    }
+                )
+                topics.append(topic)
+        
+        return topics if topics else self._create_fallback_structure()
+
+    def _extract_key_points(self, content: Union[str, List[str]]) -> List[str]:
+        """Extract potential key points from content"""
+        if isinstance(content, list):
+            content = ' '.join(content)
+            
+        # Split into sentences
+        sentences = content.split('.')
+        
+        # Look for sentences that might be key points
+        key_points = []
+        indicators = ['important', 'key', 'essential', 'fundamental', 'crucial', 'primary']
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if any(indicator in sentence.lower() for indicator in indicators) or \
+               (len(sentence.split()) < 20 and sentence):  # Short, meaningful sentences
+                key_points.append(sentence)
                 
-        # Add importance scores
-        for topic in topic_map.values():
-            for main_topic in structure.get('main_topics', []):
-                if main_topic['title'] == topic.title:
-                    topic.metadata['importance'] = main_topic['importance']
-                    break
-                    
-        return list(topic_map.values())
+        return key_points[:5]  # Return up to 5 key points
 
 # Tutorial Generation Templates
 class TutorialTemplate(ABC):
@@ -811,21 +680,13 @@ Practice Project:
         return exercises
 
 class TheoreticalTemplate(TutorialTemplate):
-    def create_tutorial_content(self, topic: Topic, user_performance: float) -> Dict[str, Any]:
-        difficulty = self._adjust_difficulty(user_performance)
-        return {
-            "overview": {
-                "title": topic.title,
-                "theoretical_framework": self._generate_framework(topic),
-                "learning_objectives": self._generate_objectives(topic, difficulty)
-            },
-            "content": {
-                "concepts": self._generate_concepts(topic),
-                "examples": self._generate_examples(topic, difficulty),
-                "discussion_points": self._generate_discussion_points(topic)
-            },
-            "difficulty": difficulty
-        }
+    def create_tutorial(self, content: Dict[str, Any]) -> List[Topic]:
+    """Create a new tutorial from content"""
+    topics = self.content_analyzer.analyze_content(content)
+    if not topics:
+        st.error("Could not generate tutorial content from document")
+        return []
+    return topics
 
 class PracticalTemplate(TutorialTemplate):
     def create_tutorial_content(self, topic: Topic, user_performance: float) -> Dict[str, Any]:
@@ -1248,26 +1109,31 @@ def render_chat_interface():
             st.session_state.user_progress['completed_topics'].append(current_topic.title)
             advance_topic()
             st.rerun()
-
+            
 def handle_file_upload(uploaded_file):
-    """Process uploaded file and initialize tutorial"""
     try:
         with st.spinner("🔄 Processing content..."):
-            # Process the file
             content = process_uploaded_file(uploaded_file)
             
-            # Initialize tutorial manager if not exists
+            if not content or not content.get('text'):
+                st.error("No content could be extracted from the file")
+                return
+                
             if not st.session_state.tutorial_manager:
                 st.session_state.tutorial_manager = TutorialManager(st.session_state.model)
             
-            # Create tutorial
-            st.session_state.topics = st.session_state.tutorial_manager.create_tutorial(content)
+            topics = st.session_state.tutorial_manager.create_tutorial(content)
             
-            st.success("✅ Tutorial created successfully! Let's begin.")
+            if not topics:
+                st.error("Could not create tutorial from content")
+                return
+                
+            st.session_state.topics = topics
+            st.success("✅ Tutorial created successfully!")
             st.rerun()
             
     except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
+        st.error(f"❌ Error processing file: {str(e)}")
 
 def advance_topic():
     """Advance to the next topic"""
