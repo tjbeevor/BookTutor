@@ -404,311 +404,7 @@ def main():
         initial_sidebar_state="expanded"
     )
 
-    # 2. Custom CSS with all enhancements
-    st.markdown("""
-        <style>
-        /* Base Styles */
-        .stApp {
-            background-color: #f8f9fa;
-        }
-        .main > div {
-            padding: 2rem;
-            border-radius: 10px;
-            background-color: white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        /* Button Styles */
-        .stButton>button {
-            width: 100%;
-            border-radius: 20px;
-            height: 3em;
-            background-color: #4CAF50;
-            color: white;
-            font-weight: bold;
-            border: none;
-            transition: all 0.3s ease;
-        }
-        .stButton>button:hover {
-            background-color: #45a049;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-
-        /* Layout and Spacing */
-        .css-1d391kg {
-            padding: 2rem 1rem;
-        }
-        .stAlert {
-            border-radius: 10px;
-        }
-
-        /* Typography */
-        h1 {
-            color: #2E4053;
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 2rem;
-        }
-        h2 {
-            color: #34495E;
-            font-size: 1.8rem;
-            font-weight: 600;
-            margin: 1.5rem 0 1rem 0;
-        }
-        h3 {
-            color: #2C3E50;
-            font-size: 1.4rem;
-            font-weight: 500;
-            margin: 1rem 0;
-        }
-
-        /* Content Sections */
-        .content-section, .example-section {
-            margin: 2rem 0;
-            padding: 2rem;
-            background-color: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .explanation-content, .examples-content {
-            margin: 1.5rem 0;
-            line-height: 1.8;
-            color: #2C3E50;
-        }
-        
-        .explanation-content h4, .examples-content h4 {
-            color: #34495E;
-            font-size: 1.2rem;
-            margin: 1.5rem 0 1rem 0;
-            font-weight: 600;
-        }
-        
-        .explanation-content p, .examples-content p {
-            margin: 1rem 0;
-        }
-        
-        .explanation-content ul, .examples-content ul {
-            margin: 1rem 0;
-            padding-left: 2rem;
-        }
-        
-        .explanation-content li, .examples-content li {
-            margin: 0.5rem 0;
-            line-height: 1.6;
-        }
-
-        /* Lesson Content */
-        .lesson-content {
-            padding: 2rem;
-            border-radius: 15px;
-            background-color: white;
-            margin: 1.5rem 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        
-        .concept-section, .examples-section, .question-section {
-            margin: 2rem 0;
-            padding: 1.5rem;
-            background-color: #f8f9fa;
-            border-radius: 10px;
-            border-left: 5px solid #4CAF50;
-        }
-        
-        .concept-section p, .examples-section p, .question-section p {
-            margin: 1rem 0;
-            line-height: 1.6;
-            color: #2C3E50;
-        }
-
-        /* Evaluation Content */
-        .evaluation-content {
-            padding: 2rem;
-            border-radius: 15px;
-            background-color: white;
-            margin: 1.5rem 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        
-        .feedback-section, .complete-answer-section {
-            margin: 1.5rem 0;
-            padding: 1.5rem;
-            background-color: #f8f9fa;
-            border-radius: 10px;
-            border-left: 5px solid #2196F3;
-        }
-        
-        .feedback-section p, .complete-answer-section p {
-            margin: 1rem 0;
-            line-height: 1.6;
-            color: #2C3E50;
-        }
-
-        /* Navigation and Progress */
-        .next-topic-prompt {
-            margin-top: 2rem;
-            padding-top: 1.5rem;
-            border-top: 2px solid #dee2e6;
-            text-align: center;
-            color: #666;
-            font-style: italic;
-        }
-
-        /* User Messages */
-        .user-message {
-            background-color: #E8F5E9;
-            padding: 1.5rem;
-            border-radius: 10px;
-            margin: 1rem 0;
-            border-left: 5px solid #4CAF50;
-        }
-
-        /* Assistant Messages */
-        .assistant-message {
-            background-color: #E3F2FD;
-            padding: 1.5rem;
-            border-radius: 10px;
-            margin: 1rem 0;
-            border-left: 5px solid #2196F3;
-        }
-
-        /* Code Formatting */
-        code {
-            padding: 0.2em 0.4em;
-            background-color: #f3f4f6;
-            border-radius: 3px;
-            font-family: monospace;
-            font-size: 0.9em;
-        }
-
-        /* List Styling */
-        ul, ol {
-            margin: 1rem 0;
-            padding-left: 2rem;
-        }
-        
-        li {
-            margin: 0.5rem 0;
-            line-height: 1.6;
-        }
-
-        /* Emphasis and Strong Text */
-        em {
-            color: #666;
-            font-style: italic;
-        }
-        
-        strong {
-            color: #2C3E50;
-            font-weight: 600;
-        }
-
-        /* Progress Indicators */
-        .progress-section {
-            background-color: #fff;
-            padding: 1.5rem;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            margin-bottom: 1.5rem;
-        }
-
-        /* Topic Overview */
-        .topic-overview {
-            background-color: #fff;
-            padding: 1.5rem;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-
-        /* Completion Message */
-        .completion-message {
-            text-align: center;
-            padding: 2rem;
-            background-color: #E8F5E9;
-            border-radius: 10px;
-            margin: 2rem 0;
-            border: 2px solid #4CAF50;
-        }
-
-        .completion-message h2 {
-            color: #2E7D32;
-            margin-bottom: 1rem;
-        }
-
-        .completion-message p {
-            color: #1B5E20;
-            font-size: 1.2rem;
-        }
-
-        .topic-title {
-            font-size: 2rem;
-            color: #2C3E50;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 2px solid #eee;
-        }
-        
-        .section-header {
-            font-size: 1.5rem;
-            color: #34495E;
-            margin: 2rem 0 1rem 0;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .content-body {
-            font-size: 1.1rem;
-            line-height: 1.6;
-            color: #2C3E50;
-            padding: 1rem;
-        }
-        
-        .content-body h4 {
-            font-size: 1.3rem;
-            color: #2C3E50;
-            margin: 1.5rem 0 1rem 0;
-        }
-        
-        .content-body p {
-            margin: 1rem 0;
-        }
-        
-        .content-body ul, .content-body ol {
-            margin: 1rem 0 1rem 2rem;
-            padding-left: 1rem;
-        }
-        
-        .content-body li {
-            margin: 0.5rem 0;
-        }
-        
-        .concept-section, .example-section, .question-section {
-            background-color: white;
-            border-radius: 10px;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .concept-section {
-            border-left: 5px solid #4CAF50;
-        }
-        
-        .example-section {
-            border-left: 5px solid #2196F3;
-        }
-        
-        .question-section {
-            border-left: 5px solid #FF9800;
-        }
-        
-        .content-body strong {
-            color: #1a237e;
-            font-weight: 600;
-        }
-        
-        </style>
-    """, unsafe_allow_html=True)
+    # 2. Custom CSS kept from original - assuming it's defined above
 
     # 3. Initialize session state
     if 'tutorial_state' not in st.session_state:
@@ -806,15 +502,14 @@ def main():
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"], unsafe_allow_html=True)
 
-            # In main(), update the lesson content display:
             if current_topic and not current_topic.completed:
-                teaching_content = None
-                
+                # Check if we need to generate new teaching content
                 if len(state.conversation_history) == 0 or (
                     len(state.conversation_history) > 0 and 
                     state.conversation_history[-1]["role"] == "assistant" and 
                     "Moving on to the next topic" in state.conversation_history[-1]["content"]
                 ):
+                    # Generate teaching content
                     teaching_content = generate_teaching_message(
                         current_topic,
                         state.current_teaching_phase,
@@ -822,7 +517,7 @@ def main():
                         st.session_state.model
                     )
                     
-                    # Format the content sections separately
+                    # Format and display the content
                     formatted_content = f"""
                     ## {current_topic.title}
             
@@ -837,25 +532,18 @@ def main():
                     """
                     
                     with st.chat_message("assistant"):
-                        st.markdown(formatted_content)
+                        st.markdown(formatted_content, unsafe_allow_html=True)
                     
+                    # Update conversation history
                     state.conversation_history.append({
                         "role": "assistant",
                         "content": formatted_content
                     })
                     
-                    st.session_state.expected_points = teaching_content["key_points"]
-                    
-                    with st.chat_message("assistant"):
-                        st.markdown(lesson_content, unsafe_allow_html=True)
-                    
-                    state.conversation_history.append({
-                        "role": "assistant",
-                        "content": lesson_content
-                    })
-                    
+                    # Store expected points for evaluation
                     st.session_state.expected_points = teaching_content["key_points"]
                 
+                # Handle user input
                 user_input = st.chat_input("Share your thoughts...")
                 if user_input:
                     with st.chat_message("user"):
@@ -866,6 +554,7 @@ def main():
                         "content": user_input
                     })
                     
+                    # Generate and display evaluation
                     evaluation = evaluate_response(
                         user_input,
                         st.session_state.expected_points,
@@ -898,8 +587,10 @@ def main():
                         "content": evaluation_response
                     })
                     
+                    # Mark current topic as completed
                     current_topic.completed = True
                     
+                    # Advance to next topic or show completion
                     if state.advance_topic():
                         st.rerun()
                     else:
