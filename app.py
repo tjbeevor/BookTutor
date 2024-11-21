@@ -5,542 +5,484 @@ import google.generativeai as genai
 import PyPDF2
 import docx
 import io
+from functools import lru_cache
+
+# Configure page with improved layout
+st.set_page_config(
+    page_title="AI Teaching Assistant",
+    page_icon="📚",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Enhanced CSS for better UI
+st.markdown("""
+<style>
+    /* Main container styling */
+    .stApp {
+        max-width: 1200px;
+        margin: 0 auto;
+        background-color: #f8f9fa;
+    }
+    
+    /* Main content area styling */
+    .main > div {
+        padding: 2rem;
+        background-color: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin: 1rem;
+    }
+    
+    /* Button styling */
+    .stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        height: 3em;
+        background-color: #4A90E2;
+        color: white;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        border: none;
+        margin: 0.5rem 0;
+    }
+    
+    .stButton > button:hover {
+        background-color: #357ABD;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    
+    /* Reset button styling */
+    .reset-button > button {
+        background-color: #dc3545;
+    }
+    
+    .reset-button > button:hover {
+        background-color: #c82333;
+    }
+    
+    /* Text area styling */
+    .stTextArea > div > div > textarea {
+        border-radius: 8px;
+        border: 2px solid #e9ecef;
+        padding: 0.75rem;
+    }
+    
+    /* Upload section styling */
+    .upload-section {
+        border: 2px dashed #4A90E2;
+        border-radius: 10px;
+        padding: 3rem;
+        margin: 2rem 0;
+        text-align: center;
+        background-color: #f8f9fa;
+        transition: all 0.3s ease;
+    }
+    
+    .upload-section:hover {
+        border-color: #357ABD;
+        background-color: #e9ecef;
+    }
+    
+    /* Topic header styling */
+    .topic-header {
+        background: linear-gradient(135deg, #4A90E2 0%, #357ABD 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .topic-header h2 {
+        margin: 0;
+        color: white;
+    }
+    
+    /* Navigation styling */
+    .nav-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+    
+    /* Sidebar styling */
+    .sidebar .sidebar-content {
+        background-color: #f8f9fa;
+        padding: 1rem;
+    }
+    
+    /* Progress indicators */
+    .progress-indicator {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        border-radius: 5px;
+        margin: 0.25rem 0;
+        transition: all 0.3s ease;
+    }
+    
+    .progress-indicator:hover {
+        background-color: #e9ecef;
+    }
+    
+    /* Welcome screen styling */
+    .welcome-screen {
+        text-align: center;
+        padding: 3rem;
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .welcome-screen h1 {
+        color: #4A90E2;
+        margin-bottom: 1.5rem;
+    }
+    
+    /* Loader styling */
+    .stSpinner > div {
+        border-color: #4A90E2;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 def initialize_model():
-    """Initialize or get the Google PaLM model"""
+    """Initialize or get the Google Gemini model"""
     try:
-        if 'api_key' not in st.session_state:
-            st.session_state.api_key = st.secrets.get('GOOGLE_API_KEY', '')
+        # Check if API key is in session state
+        if 'gemini_api_key' not in st.session_state:
+            st.session_state.gemini_api_key = st.secrets.get('GOOGLE_API_KEY', '')
         
-        if not st.session_state.api_key:
-            st.session_state.api_key = st.text_input(
+        if not st.session_state.gemini_api_key:
+            st.session_state.gemini_api_key = st.text_input(
                 'Enter Google API Key:', 
                 type='password',
-                help="Enter your Google API key to access the PaLM model"
+                help="Enter your Google API key to access the Gemini model"
             )
-            if not st.session_state.api_key:
+            if not st.session_state.gemini_api_key:
                 st.warning('⚠️ Please enter your Google API key to continue.')
                 return None
         
-        genai.configure(api_key=st.session_state.api_key)
+        # Configure the Gemini API
+        genai.configure(api_key=st.session_state.gemini_api_key)
         
-        # List available models
-        models = genai.list_models()
-        available_models = [model.name for model in models]  # Corrected line
-        if not available_models:
-            st.error("No models available. Please check your API key and permissions.")
-            return None
-
-        # Allow the user to select a model
-        st.session_state.model_name = st.selectbox(
-            "Select a model:",
-            available_models,
-            index=0
-        )
-        return st.session_state.model_name
-        
-    except Exception as e:
-        st.error(f"❌ Error initializing PaLM model: {str(e)}")
-        return None
-
-class EnhancedTeacher:
-    def __init__(self, model):
-        self.model = model
-
-    def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
-        try:
-            text_content = content['text']
-            if text_content is None:
-                text_content = ''  # Ensure text_content is never None
-                
-            sections = self._split_into_chunks(text_content)
-            all_topics = []
-            
-            for section in sections:
-                prompt = """You are an expert curriculum designer. Create a detailed learning module from the provided content.
-Your response must be a valid JSON object with no trailing commas, following this EXACT structure:
-
-{
-  "title": "Specific topic title",
-  "learning_objectives": [
-    "First learning objective",
-    "Second learning objective"
-  ],
-  "key_points": [
-    "First key point",
-    "Second key point"
-  ],
-  "content": "Main educational content",
-  "practical_exercises": [
-    "First exercise",
-    "Second exercise"
-  ],
-  "knowledge_check": {
-    "questions": [
-      {
-        "question": "Sample question?",
-        "options": [
-          "First option",
-          "Second option",
-          "Third option",
-          "Fourth option"
-        ],
-        "correct_answer": "First option",
-        "explanation": "Explanation of the correct answer"
-      }
-    ]
-  },
-  "difficulty": "beginner",
-  "estimated_time": "30 minutes"
-}
-
-Content to analyze:
-"""
-                # Add the section content with clear delimiter
-                prompt += f"\n\n{section[:4000]}\n\nRespond ONLY with the JSON structure, no additional text or explanations."
-
-                try:
-                    response = genai.generate_text(
-                        model=self.model,
-                        prompt=prompt,
-                        temperature=0.1,
-                        top_p=0.95,
-                        top_k=40
-                    )
-                    
-                    response_text = response.result
-                    # Clean the response text more aggressively
-                    response_text = self._clean_json_text(response_text)
-                    
-                    try:
-                        topic = json.loads(response_text)
-                        if self._validate_topic(topic):
-                            topic = self._enhance_topic(topic, section)
-                            all_topics.append(topic)
-                            continue
-                    except json.JSONDecodeError as e:
-                        st.warning(f"JSON parsing error: {str(e)}")
-                    
-                    # If we get here, either the response was empty or parsing failed
-                    st.warning("Using fallback structure for this section")
-                    fallback = self._create_fallback_structure(section[:1000])
-                    all_topics.append(fallback)
-
-                except Exception as e:
-                    st.warning(f"Processing error for section: {str(e)}")
-                    fallback = self._create_fallback_structure(section[:1000])
-                    all_topics.append(fallback)
-                    continue
-
-            # Post-process all topics to ensure coherent flow
-            processed_topics = self._post_process_topics(all_topics) if all_topics else [self._create_fallback_structure(text_content)]
-            return processed_topics
-
-        except Exception as e:
-            st.error(f"Error in document analysis: {str(e)}")
-            return [self._create_fallback_structure(text_content)]
-
-    def _clean_json_text(self, text: str) -> str:
-        """More aggressive JSON text cleaning"""
-        try:
-            # Remove any markdown code block markers and extra whitespace
-            text = text.replace('```json', '').replace('```', '')
-            text = text.strip()
-            
-            # Find the first '{' and last '}'
-            start = text.find('{')
-            end = text.rfind('}')
-            
-            if start != -1 and end != -1:
-                text = text[start:end+1]
-            
-            # More aggressive cleaning
-            text = text.replace('\\"', '"')  # Fix escaped quotes
-            text = text.replace('\n', ' ')   # Remove newlines
-            text = text.replace('\\n', ' ')  # Remove escaped newlines
-            text = text.replace('\\', '')    # Remove remaining backslashes
-            text = ' '.join(text.split())    # Normalize spacing
-            
-            # Fix common JSON formatting issues
-            text = text.replace('"{', '{')   # Fix escaped objects
-            text = text.replace('}"', '}')   # Fix escaped objects
-            text = text.replace(',}', '}')   # Remove trailing commas
-            text = text.replace(',]', ']')   # Remove trailing commas
-            
-            # Replace single quotes with double quotes
-            text = text.replace("'", '"')
-            
-            # Fix missing quotes around property names
-            import re
-            text = re.sub(r'(\s*{?\s*)(\w+)(\s*:)', r'\1"\2"\3', text)
-            
-            # Validate JSON structure before returning
-            json.loads(text)  # Test if it's valid JSON
-            return text
-            
-        except json.JSONDecodeError:
-            # Create a minimal valid JSON structure
-            return json.dumps(self._create_fallback_structure("Content parsing error"))
-        
-        except Exception as e:
-            st.error(f"Error cleaning JSON text: {str(e)}")
-            return json.dumps(self._create_fallback_structure("Content parsing error"))
-
-    def _split_into_chunks(self, text: str) -> List[str]:
-        """Split content into logical sections with size limits"""
-        max_chunk_size = 4000  # Adjust as needed
-        lines = text.split('\n')
-        sections = []
-        current_section = []
-
-        for line in lines:
-            if self._is_section_header(line) and current_section:
-                section_text = '\n'.join(current_section).strip()
-                if section_text:
-                    sections.append(section_text)
-                current_section = [line]
-            else:
-                current_section.append(line)
-        
-        if current_section:
-            section_text = '\n'.join(current_section).strip()
-            if section_text:
-                sections.append(section_text)
-        
-        # If no natural sections found, create chunks of reasonable size
-        if len(sections) <= 1:
-            chunks = [text[i:i+max_chunk_size] for i in range(0, len(text), max_chunk_size)]
-            # Ensure chunks break at sentence boundaries where possible
-            return self._refine_chunks(chunks)
-            
-        return sections
-
-    def _refine_chunks(self, chunks: List[str]) -> List[str]:
-        """Refine chunk boundaries to break at natural points"""
-        refined_chunks = []
-        for chunk in chunks:
-            if len(chunk) < 4000:
-                refined_chunks.append(chunk)
-            else:
-                # Break at last full stop within chunk
-                last_period = chunk.rfind('.')
-                if last_period != -1:
-                    refined_chunks.append(chunk[:last_period+1])
-                else:
-                    refined_chunks.append(chunk)
-        return refined_chunks
-
-    def _is_section_header(self, line: str) -> bool:
-        """Detect if a line is likely a section header"""
-        line = line.strip()
-        if not line:
-            return False
-            
-        patterns = [
-            lambda x: x.isupper() and len(x) > 10,
-            lambda x: x.startswith(('#', 'Chapter', 'Section')),
-            lambda x: any(char.isdigit() for char in x[:5]) and len(x) < 100,
-            lambda x: x.endswith(':') and len(x) < 100
-        ]
-        
-        return any(pattern(line) for pattern in patterns)
-
-    def _validate_topic(self, topic: Dict) -> bool:
-        """Validate topic structure with detailed feedback"""
-        # First check if content exists and is None
-        if 'content' in topic and topic['content'] is None:
-            topic['content'] = ''  # Set empty string instead of None
-        
-        required_fields = [
-            'title', 
-            'learning_objectives', 
-            'key_points', 
-            'content'
-        ]
-        
-        missing_fields = [field for field in required_fields if field not in topic]
-        if missing_fields:
-            st.warning(f"Missing required fields: {', '.join(missing_fields)}")
-            return False
+        # Initialize the model
+        return genai.GenerativeModel('gemini-pro')
     
-        # Validate field types
-        type_checks = {
-            'title': str,
-            'learning_objectives': list,
-            'key_points': list,
-            'content': str
-        }
-        
-        for field, expected_type in type_checks.items():
-            if field in topic and not isinstance(topic[field], expected_type):
-                # Convert None to empty string for content field
-                if field == 'content' and topic[field] is None:
-                    topic[field] = ''
-                else:
-                    st.warning(f"Field '{field}' has incorrect type. Expected {expected_type}, got {type(topic[field])}")
-                    return False
-                    
-        return True
-
-    def _enhance_topic(self, topic: Dict, original_section: str) -> Dict:
-        """Enhance topic with additional context and structure"""
-        # Ensure all fields are present
-        topic.setdefault('practical_exercises', [])
-        topic.setdefault('knowledge_check', {'questions': []})
-        topic.setdefault('real_world_applications', [])
-        topic.setdefault('additional_resources', [])
-        topic.setdefault('difficulty', 'beginner')
-        topic.setdefault('estimated_time', '30 minutes')
-
-        # Preserve original content structure
-        if 'content' in topic:
-            topic['content'] = self._preserve_formatting(topic['content'], original_section)
-
-        return topic
-
-    def _preserve_formatting(self, content: str, original: str) -> str:
-        """Preserve original formatting and structure where possible"""
-        # Preserve lists
-        lines = content.split('\n')
-        formatted_lines = []
-        for line in lines:
-            if line.strip().startswith(('•', '-', '*', '1.', '2.')):
-                formatted_lines.append(f"\n{line}")
-            else:
-                formatted_lines.append(line)
-        return '\n'.join(formatted_lines)
-
-    def _post_process_topics(self, topics: List[Dict]) -> List[Dict]:
-        """Ensure topics flow logically and maintain document structure"""
-        processed_topics = []
-        current_difficulty = "beginner"
-        
-        for i, topic in enumerate(topics):
-            # Ensure progression of difficulty
-            if i > len(topics) // 2:
-                current_difficulty = "intermediate"
-            if i > len(topics) * 0.8:
-                current_difficulty = "advanced"
-            
-            # Add cross-references and connections
-            if i > 0:
-                topic['prerequisites'] = [topics[i-1]['title']]
-            if i < len(topics) - 1:
-                topic['next_steps'] = [topics[i+1]['title']]
-            
-            topic['difficulty'] = current_difficulty
-            processed_topics.append(topic)
-        
-        return processed_topics
-
-    def _create_fallback_structure(self, content: str) -> Dict:
-        """Create more informative fallback structure when parsing fails"""
-        return {
-            'title': 'Content Section',
-            'learning_objectives': ['Understand the key concepts in this section'],
-            'key_points': ['Review the main points presented in this material'],
-            'content': content[:1000] + ("..." if len(content) > 1000 else ""),
-            'practical_exercises': ['Summarize the main concepts presented'],
-            'knowledge_check': {
-                'questions': [{
-                    'question': 'What are the main topics covered in this section?',
-                    'options': [
-                        'Review the content to identify key topics',
-                        'Analyze the main concepts presented',
-                        'Summarize the key points',
-                        'All of the above'
-                    ],
-                    'correct_answer': 'All of the above',
-                    'explanation': 'A thorough review of the content will help identify and understand the key topics.'
-                }]
-            },
-            'difficulty': 'beginner',
-            'estimated_time': '15 minutes'
-        }
-
-    def teach_topic(self, topic: Dict, user_progress: Dict) -> str:
-        """Generate engaging lesson content with proper response handling"""
-        try:
-            prompt = f"""
-Create an engaging lesson for: {topic['title']}
-
-Learning objectives:
-{json.dumps(topic.get('learning_objectives', []), indent=2)}
-
-Key points:
-{json.dumps(topic.get('key_points', []), indent=2)}
-
-Main content:
-{topic.get('content', '')}
-
-Create an engaging lesson with:
-1. Clear introduction
-2. Detailed explanations
-3. Practical examples
-4. Interactive elements
-5. Summary and key takeaways
-
-Student context:
-- Level: {user_progress.get('understanding_level', 'beginner')}
-- Topics completed: {len(user_progress.get('completed_topics', []))}
-
-Use markdown formatting for clear structure and engagement.
-"""
-
-            response = genai.generate_text(
-                model=self.model,
-                prompt=prompt,
-                temperature=0.7,
-                max_output_tokens=1024  # Adjust as needed
-            )
-            
-            # Properly handle the response
-            lesson_content = response.result
-            return lesson_content
-
-        except Exception as e:
-            st.error(f"Error generating lesson: {str(e)}")
-            return "Error generating lesson content."
-
-def process_text_from_file(file_content, file_type) -> str:
-    """Process uploaded file content"""
-    try:
-        if file_type == "application/pdf":
-            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
-            text = "\n\n".join(page.extract_text() or '' for page in pdf_reader.pages)
-            
-        elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            doc = docx.Document(io.BytesIO(file_content))
-            text = "\n\n".join(paragraph.text for paragraph in doc.paragraphs)
-            
-        elif file_type == "text/markdown":
-            text = file_content.decode()
-            
-        else:
-            raise ValueError(f"Unsupported file type: {file_type}")
-        
-        return text.strip()
-        
     except Exception as e:
-        raise Exception(f"Error processing file: {str(e)}")
+        st.error(f"❌ Error initializing Gemini model: {str(e)}")
+        return None
 
 def reset_application():
     """Reset the application state"""
     for key in list(st.session_state.keys()):
-        if key not in ['api_key', 'model_name']:  # Preserve API key and model name
+        if key != 'gemini_api_key':  # Preserve API key
             del st.session_state[key]
-    st.experimental_rerun()
+    st.rerun()
 
-def main():
-    """Main application function"""
-    st.set_page_config(
-        page_title="Enhanced Learning Assistant",
-        page_icon="📚",
-        layout="wide"
-    )
+def process_text_from_file(file_content, file_type) -> str:
+    """Extract text from different file types"""
+    try:
+        if file_type == "application/pdf":
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+            return " ".join(page.extract_text() for page in pdf_reader.pages)
+            
+        elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(io.BytesIO(file_content))
+            return " ".join(paragraph.text for paragraph in doc.paragraphs)
+            
+        elif file_type == "text/markdown":
+            return file_content.decode()
+            
+        else:
+            raise ValueError(f"Unsupported file type: {file_type}")
+    except Exception as e:
+        raise Exception(f"Error processing file content: {str(e)}")
 
-    st.title("📚 Enhanced Learning Assistant")
-    st.write("Upload your educational content and let AI help transform it into an interactive learning experience.")
-
-    # Initialize model
-    model = initialize_model()
-    if not model:
-        return
-
-    # Initialize teacher
-    teacher = EnhancedTeacher(model)
-
-    # Session state initialization
-    if 'current_topics' not in st.session_state:
-        st.session_state.current_topics = []
-    if 'user_progress' not in st.session_state:
-        st.session_state.user_progress = {
-            'understanding_level': 'beginner',
-            'completed_topics': []
+def process_uploaded_file(uploaded_file) -> Dict:
+    """Process uploaded file and extract content"""
+    try:
+        file_content = uploaded_file.read()
+        text_content = process_text_from_file(file_content, uploaded_file.type)
+        
+        return {
+            "text": text_content,
+            "structure": {
+                "sections": create_sections(text_content)
+            }
         }
+    except Exception as e:
+        st.error(f"❌ Error processing file: {str(e)}")
+        return {"text": "", "structure": {"sections": []}}
 
-    # Sidebar
-    with st.sidebar:
-        st.header("Settings")
-        
-        # Reset button
-        if st.button("Reset Application", type="secondary"):
-            reset_application()
-        
-        # Understanding level selector
-        st.session_state.user_progress['understanding_level'] = st.selectbox(
-            "Select your understanding level:",
-            ["beginner", "intermediate", "advanced"],
-            index=["beginner", "intermediate", "advanced"].index(
-                st.session_state.user_progress.get('understanding_level', 'beginner')
-            )
-        )
+def create_sections(text: str) -> List[Dict]:
+    """Create sections from text content"""
+    sections = []
+    current_section = {"title": "Introduction", "content": []}
+    
+    for paragraph in text.split('\n\n'):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+            
+        if paragraph.isupper() or paragraph.endswith(':'):
+            if current_section["content"]:
+                sections.append(dict(current_section))
+            current_section = {"title": paragraph, "content": []}
+        else:
+            current_section["content"].append(paragraph)
+    
+    if current_section["content"]:
+        sections.append(dict(current_section))
+    
+    return sections
 
-    # Main content area
-    uploaded_file = st.file_uploader(
-        "Upload your educational content (PDF, DOCX, or Markdown)",
-        type=['pdf', 'docx', 'md'],
-        help="Upload your educational material to begin"
-    )
+class DynamicTeacher:
+    def __init__(self, model):
+        self.model = model
 
-    if uploaded_file:
+    def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
+        """Initial document analysis to create learning structure"""
         try:
-            # Process the uploaded file
-            file_content = uploaded_file.read()
-            text_content = process_text_from_file(file_content, uploaded_file.type)
+            text_content = content['text']
+            
+            prompt = f"""
+            You are a helpful teaching assistant. Your task is to analyze the following educational content and create a learning structure.
+            
+            Content to analyze:
+            {text_content[:2000]}...
 
-            # Analyze content
-            with st.spinner("Analyzing content and creating learning modules..."):
-                topics = teacher.analyze_document({'text': text_content})
-                st.session_state.current_topics = topics
+            Instructions:
+            Create a learning structure with clear topics and key points. You must respond with ONLY a JSON object in the following format:
+            {{
+                "topics": [
+                    {{
+                        "title": "Topic title",
+                        "key_points": ["point 1", "point 2"],
+                        "content": "Relevant content from the document",
+                        "teaching_style": "conceptual",
+                        "difficulty": "beginner"
+                    }}
+                ]
+            }}
 
-            # Display topics
-            if st.session_state.current_topics:
-                st.subheader("📑 Learning Modules")
-                
-                for i, topic in enumerate(st.session_state.current_topics):
-                    with st.expander(f"Module {i+1}: {topic['title']}", expanded=i==0):
-                        # Topic metadata
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.caption(f"Difficulty: {topic['difficulty']}")
-                        with col2:
-                            st.caption(f"Estimated time: {topic['estimated_time']}")
-                        with col3:
-                            status = 'Completed' if topic['title'] in st.session_state.user_progress['completed_topics'] else 'Not Started'
-                            st.caption(f"Status: {status}")
+            Remember:
+            1. Response must be valid JSON
+            2. Do not include any other text or explanations
+            3. Only include the JSON structure
+            4. Ensure all JSON keys and values are properly quoted
+            """
 
-                        # Display lesson content
-                        if st.button(f"Start Module {i+1}", key=f"start_module_{i}"):
-                            lesson_content = teacher.teach_topic(topic, st.session_state.user_progress)
-                            st.markdown(lesson_content)
+            response = self.model.generate_content(prompt, generation_config={
+                'temperature': 0.3,
+                'top_p': 0.8,
+                'top_k': 40
+            })
 
-                            # Knowledge check section
-                            if topic.get('knowledge_check', {}).get('questions'):
-                                st.subheader("✍️ Knowledge Check")
-                                for q_idx, question in enumerate(topic['knowledge_check']['questions']):
-                                    st.write(f"Q{q_idx + 1}: {question['question']}")
-                                    answer = st.radio(
-                                        "Select your answer:",
-                                        question['options'],
-                                        key=f"q_{i}_{q_idx}"
-                                    )
-                                    if st.button("Check Answer", key=f"check_{i}_{q_idx}"):
-                                        if answer == question['correct_answer']:
-                                            st.success("Correct! " + question['explanation'])
-                                        else:
-                                            st.error(f"Not quite. The correct answer is: {question['correct_answer']}")
-
-                            # Mark as complete button
-                            if st.button("Mark as Complete", key=f"complete_{i}"):
-                                if topic['title'] not in st.session_state.user_progress['completed_topics']:
-                                    st.session_state.user_progress['completed_topics'].append(topic['title'])
-                                st.success("Module marked as complete!")
-                                st.experimental_rerun()
+            response_text = response.text.strip()
+            
+            try:
+                start = response_text.find('{')
+                end = response_text.rfind('}') + 1
+                if start != -1 and end != 0:
+                    json_str = response_text[start:end]
+                    structure = json.loads(json_str)
+                    
+                    if 'topics' not in structure:
+                        structure = {'topics': []}
+                    
+                    for topic in structure['topics']:
+                        topic.setdefault('key_points', [])
+                        topic.setdefault('content', '')
+                        topic.setdefault('teaching_style', 'conceptual')
+                        topic.setdefault('difficulty', 'beginner')
+                    
+                    return structure['topics']
+                else:
+                    raise ValueError("No JSON object found in response")
+                    
+            except json.JSONDecodeError as e:
+                st.error(f"❌ JSON parsing error: {str(e)}")
+                return [{
+                    'title': 'Document Overview',
+                    'key_points': ['Key points from the document'],
+                    'content': text_content[:1000],
+                    'teaching_style': 'conceptual',
+                    'difficulty': 'beginner'
+                }]
 
         except Exception as e:
-            st.error(f"Error processing file: {str(e)}")
-            st.write("Please try uploading a different file or contact support if the issue persists.")
+            st.error(f"❌ Error analyzing document: {str(e)}")
+            return [{
+                'title': 'Document Overview',
+                'key_points': ['Document analysis needs review'],
+                'content': text_content[:1000] if text_content else 'Content unavailable',
+                'teaching_style': 'conceptual',
+                'difficulty': 'beginner'
+            }]
+
+    def teach_topic(self, topic: Dict, user_progress: Dict) -> str:
+        """Dynamically generate teaching content"""
+        try:
+            prompt = f"""
+            Act as an expert teacher teaching this topic: {topic['title']}
+
+            Key points to cover:
+            {json.dumps(topic['key_points'], indent=2)}
+
+            Content to teach from:
+            {topic['content']}
+
+            Teaching context:
+            - Teaching style: {topic['teaching_style']}
+            - Difficulty level: {topic['difficulty']}
+            - Student progress: {user_progress.get('understanding_level', 'beginner')}
+
+            Create an engaging lesson that:
+            1. Introduces the topic clearly
+            2. Explains concepts with examples
+            3. Uses analogies when helpful
+            4. Provides clear explanations of key points
+
+            Format your response as a clear lesson with markdown formatting.
+            Include emoji for visual engagement 📚
+            Make it conversational and encouraging 🎯
+            """
+
+            response = self.model.generate_content(prompt)
+            return response.text
+
+        except Exception as e:
+            st.error(f"❌ Error generating lesson: {str(e)}")
+            return "Error generating lesson content."
+
+def main():
+    # Initialize session state
+    if 'topics' not in st.session_state:
+        st.session_state.topics = []
+    if 'current_topic' not in st.session_state:
+        st.session_state.current_topic = 0
+    if 'user_progress' not in st.session_state:
+        st.session_state.user_progress = {'understanding_level': 'beginner'}
+    
+    # Initialize model
+    model = initialize_model()
+    if model is None:
+        st.stop()
+        return
+
+    # Store model in session state
+    st.session_state.model = model
+
+    # Initialize teacher
+    teacher = DynamicTeacher(st.session_state.model)
+
+    # Sidebar navigation and reset button
+    with st.sidebar:
+        st.title("📚 Learning Progress")
+        
+        # Reset button at the top of sidebar
+        if st.button("🔄 Start New Session", key="reset_button", help="Reset the application and upload a new document"):
+            reset_application()
+        
+        st.divider()
+        
+        # Topic navigation
+        if st.session_state.topics:
+            for i, topic in enumerate(st.session_state.topics):
+                progress_status = "✅" if i < st.session_state.current_topic else "📍" if i == st.session_state.current_topic else "⭕️"
+                if st.button(f"{progress_status} {topic['title']}", key=f"topic_{i}"):
+                    st.session_state.current_topic = i
+                    st.rerun()
+
+    # Main content area
+    if not st.session_state.topics:
+        st.markdown("""
+        <div class="welcome-screen">
+            <h1>📚 Welcome to AI Teaching Assistant</h1>
+            <p style="font-size: 1.2rem; color: #666; margin: 1rem 0;">
+                Transform your documents into interactive learning experiences.
+            </p>
+            <div class="upload-section">
+                <p style="color: #4A90E2; font-size: 1.1rem; margin-bottom: 1rem;">
+                    📄 Drop your document here to begin
+                </p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        uploaded_file = st.file_uploader(
+            "",  # Empty label as we have custom HTML above
+            type=['pdf', 'docx', 'md'],
+            help="Supported formats: PDF, DOCX, MD"
+        )
+        
+        if uploaded_file:
+            with st.spinner("🔄 Processing your document..."):
+                try:
+                    content = process_uploaded_file(uploaded_file)
+                    
+                    if content["text"]:
+                        topics = teacher.analyze_document(content)
+                        if topics:
+                            st.session_state.topics = topics
+                            st.rerun()
+                        else:
+                            st.error("❌ Could not extract topics from the document. Please try a different document.")
+                    else:
+                        st.error("❌ Could not extract text from the document. Please check if the file is readable.")
+                except Exception as e:
+                    st.error(f"❌ Error processing document: {str(e)}")
+
+    else:
+        # Display current topic
+        current_topic = st.session_state.topics[st.session_state.current_topic]
+        
+        # Topic header with improved styling
+        st.markdown(f"""
+        <div class="topic-header">
+            <h2>{current_topic['title']}</h2>
+            <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">
+                Topic {st.session_state.current_topic + 1} of {len(st.session_state.topics)}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Generate teaching content
+        with st.spinner("🎓 Preparing your lesson..."):
+            teaching_content = teacher.teach_topic(
+                current_topic, 
+                st.session_state.user_progress
+            )
+        
+        # Display teaching content in a clean container
+        st.markdown("""
+        <div style="background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        """, unsafe_allow_html=True)
+        st.markdown(teaching_content)
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Navigation buttons with improved layout
+        st.markdown("<br>", unsafe_allow_html=True)  # Add some spacing
+        cols = st.columns([1, 2, 1])  # Create three columns for better button spacing
+        
+        with cols[0]:  # Previous button
+            if st.session_state.current_topic > 0:
+                if st.button("⬅️ Previous Topic", key="prev_topic", help="Go to previous topic"):
+                    st.session_state.current_topic -= 1
+                    st.rerun()
+        
+        with cols[2]:  # Next button
+            if st.session_state.current_topic < len(st.session_state.topics) - 1:
+                if st.button("Next Topic ➡️", key="next_topic", help="Go to next topic"):
+                    st.session_state.current_topic += 1
+                    st.rerun()
+            elif st.session_state.current_topic == len(st.session_state.topics) - 1:
+                st.success("🎉 Congratulations! You've completed all topics!")
 
 if __name__ == "__main__":
     main()
