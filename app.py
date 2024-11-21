@@ -446,6 +446,100 @@ Please explain your understanding of {topic.title}.
                     "key_points": ["Understanding core concepts", "Practical applications", "Key takeaways"]
                 }
             time.sleep(1)
+
+def evaluate_response(user_response: str, expected_points: List[str], current_topic: Topic, model) -> dict:
+    """
+    Evaluate user's response to the understanding check question.
+    
+    Args:
+        user_response: The user's submitted answer
+        expected_points: List of key points that should be addressed
+        current_topic: The current topic being discussed
+        model: The AI model instance
+    
+    Returns:
+        dict: Contains formatted feedback and complete answer
+    """
+    prompt = f"""
+    Evaluate this response about {current_topic.title}.
+
+    Topic Content:
+    {current_topic.content}
+
+    Expected Key Points:
+    {" - " + "\n - ".join(expected_points)}
+
+    User's Response:
+    {user_response}
+
+    Provide a detailed evaluation in this exact JSON format:
+    {{
+        "feedback": "Specific, constructive feedback highlighting strengths and areas for improvement",
+        "complete_answer": "Comprehensive explanation incorporating all key points",
+        "understanding_level": "A number from 0-100 indicating comprehension"
+    }}
+
+    Make the feedback encouraging while identifying any missing key points.
+    """
+
+    try:
+        response = model.generate_content(prompt)
+        response_text = clean_json_string(response.text)
+        evaluation = json.loads(response_text)
+
+        # Format the evaluation response with proper markdown and spacing
+        formatted_response = f"""
+        <div class="evaluation-content">
+            <div class="feedback-section">
+                <h3>💭 Feedback on Your Response</h3>
+                {evaluation['feedback']}
+            </div>
+            
+            <div class="complete-answer-section">
+                <h3>📝 Complete Explanation</h3>
+                {evaluation['complete_answer']}
+            </div>
+            
+            <div class="next-topic-prompt">
+                <hr>
+                <p><em>🎯 Moving on to the next topic...</em></p>
+            </div>
+        </div>
+        """
+
+        return {
+            "feedback": formatted_response,
+            "complete_answer": evaluation['complete_answer'],
+            "understanding_level": int(evaluation['understanding_level'])
+        }
+
+    except Exception as e:
+        st.error(f"Error evaluating response: {str(e)}")
+        # Provide a basic formatted response in case of error
+        return {
+            "feedback": f"""
+            <div class="evaluation-content">
+                <div class="feedback-section">
+                    <h3>💭 Feedback on Your Response</h3>
+                    Thank you for your response. While you've made some good points, let's review the key concepts to ensure full understanding.
+                </div>
+                
+                <div class="complete-answer-section">
+                    <h3>📝 Complete Explanation</h3>
+                    {current_topic.content}
+                </div>
+                
+                <div class="next-topic-prompt">
+                    <hr>
+                    <p><em>🎯 Moving on to the next topic...</em></p>
+                </div>
+            </div>
+            """,
+            "complete_answer": current_topic.content,
+            "understanding_level": 50
+        }
+
+
 def main():
     # 1. Page Configuration
     st.set_page_config(
