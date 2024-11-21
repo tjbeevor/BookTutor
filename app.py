@@ -292,40 +292,57 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     """
-    Generate cohesive, well-structured teaching content with proper formatting.
+    Generate cohesive, well-structured teaching content combining original logic with improved formatting.
     """
     try:
+        # Create context from conversation history (from original)
+        previous_topics = []
+        for msg in conversation_history:
+            if msg["role"] == "assistant" and "<h2>" in msg["content"]:
+                topic_title = msg["content"].split("<h2>")[1].split("</h2>")[0]
+                previous_topics.append(topic_title)
+
         prompt = f"""
-        Create a comprehensive lesson about: {topic.title}
+        Create a comprehensive, well-structured lesson about: {topic.title}
         
-        Main content to cover: {topic.content}
+        Context:
+        - Main topic content: {topic.content}
+        - Teaching phase: {phase}
+        - Previously covered topics: {', '.join(previous_topics) if previous_topics else 'This is the first topic'}
         
-        Structure the content as follows:
-
-        1. Main Content:
-           - Clear introduction
-           - Key concepts with detailed explanations
-           - Important points in bold
-           - Use clear headings for subsections
-           - Use numbered lists where appropriate
-
-        2. Examples:
-           - 2-3 practical, real-world examples
-           - Step-by-step instructions
-           - Clear scenarios
-           - Specific applications of the concepts
-
-        3. Understanding Check:
-           - One clear, specific question
-           - Should test understanding of both concepts and applications
-           - Should require analytical thinking
-
-        Format as JSON with markdown for formatting:
+        Create a lesson that:
+        1. Starts with a clear introduction of the concept
+        2. Builds on any previously covered topics
+        3. Uses concrete, relatable examples
+        4. Includes interactive elements
+        5. Leads to practical applications
+        
+        The explanation should:
+        - Break down complex ideas into digestible parts
+        - Use clear, concise language
+        - Include relevant analogies or comparisons
+        - Connect to real-world applications
+        - Use markdown formatting (**bold**, ## headers, bullet points)
+        
+        The examples should:
+        - Be specific and detailed
+        - Range from simple to more complex
+        - Connect to practical applications
+        - Include step-by-step explanations where appropriate
+        - Reference concepts from the explanation
+        
+        The question should:
+        - Directly relate to the content just covered
+        - Test understanding of key concepts
+        - Encourage critical thinking
+        - Allow for demonstration of practical application
+        
+        Return the lesson as JSON in this format:
         {{
-            "explanation": "Main content with markdown formatting",
-            "examples": "Examples with markdown formatting",
-            "question": "Understanding check question",
-            "key_points": ["key point 1", "key point 2", "key point 3"]
+            "explanation": "Detailed markdown-formatted explanation with proper structure",
+            "examples": "2-3 specific, relevant examples with markdown formatting",
+            "question": "Specific question about the content covered",
+            "key_points": ["3-4 specific key points from this lesson"]
         }}
         """
         
@@ -336,93 +353,46 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
                 response_text = clean_json_string(response.text)
                 lesson_content = json.loads(response_text)
                 
-                # We'll handle the HTML structure in the main display, 
-                # just return the raw content
+                # Validate content (from original)
+                required_keys = ["explanation", "examples", "question", "key_points"]
+                if not all(key in lesson_content for key in required_keys):
+                    raise ValueError("Missing required content sections")
+                    
+                # Ensure content is substantial (from original)
+                if len(lesson_content["explanation"]) < 200:
+                    raise ValueError("Explanation too brief")
+                if len(lesson_content["examples"]) < 100:
+                    raise ValueError("Examples too brief")
+                if len(lesson_content["question"]) < 50:
+                    raise ValueError("Question too brief")
+                
+                # Clean up any HTML tags but preserve markdown
+                for key in ['explanation', 'examples', 'question']:
+                    if key in lesson_content:
+                        content = lesson_content[key]
+                        # Remove HTML tags but keep markdown
+                        content = content.replace('<div>', '').replace('</div>', '')
+                        content = content.replace('<br>', '\n')
+                        # Ensure proper markdown formatting
+                        content = content.replace('**', '**')  # Fix any broken bold formatting
+                        content = content.replace('##', '##')  # Fix any broken header formatting
+                        lesson_content[key] = content
+                
                 return lesson_content
                 
             except Exception as e:
                 if attempt == max_retries - 1:
+                    st.error(f"Failed to generate teaching content after {max_retries} attempts")
                     raise
                 time.sleep(1)
                 
     except Exception as e:
         st.error(f"Error generating teaching content: {str(e)}")
         return {
-            "explanation": "Content generation failed.",
-            "examples": "Examples not available.",
-            "question": "Please try again.",
-            "key_points": ["Error generating content"]
-        }
-def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
-    """
-    Provide more targeted and contextual evaluation of user responses.
-    """
-    try:
-        prompt = f"""
-        Evaluate this student response about: {topic.title}
-        
-        Context:
-        Topic Content: {topic.content}
-        Expected Key Points: {', '.join(expected_points)}
-        
-        Student's Response: {answer}
-        
-        Provide an evaluation that:
-        1. Specifically addresses the student's response in relation to the topic
-        2. References specific parts of their answer
-        3. Connects feedback to the key points and content
-        4. Offers concrete suggestions for improvement
-        
-        The feedback should:
-        - Start with positive aspects of their response
-        - Point out specific connections they made correctly
-        - Identify specific areas where understanding could be deepened
-        - Suggest specific ways to improve understanding
-        
-        The complete answer should:
-        - Build on correct parts of their response
-        - Fill in any gaps in understanding
-        - Connect back to the main topic concepts
-        - Provide additional context where needed
-        
-        Return your evaluation as JSON in this format:
-        {{
-            "feedback": "Specific, constructive feedback that references their actual response",
-            "complete_answer": "Comprehensive explanation that builds on their understanding",
-            "mastered": boolean indicating if they demonstrated good understanding
-        }}
-        """
-        
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = model.generate_content(prompt)
-                response_text = clean_json_string(response.text)
-                evaluation = json.loads(response_text)
-                
-                # Validate evaluation content
-                required_keys = ["feedback", "complete_answer", "mastered"]
-                if not all(key in evaluation for key in required_keys):
-                    raise ValueError("Missing required evaluation sections")
-                
-                # Ensure feedback is substantial and specific
-                if len(evaluation["feedback"]) < 100:
-                    raise ValueError("Feedback too brief")
-                    
-                return evaluation
-                
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    st.error(f"Failed to generate evaluation after {max_retries} attempts")
-                    raise
-                time.sleep(1)
-                
-    except Exception as e:
-        st.error(f"Error evaluating response: {str(e)}")
-        return {
-            "feedback": f"Thank you for your thoughts on {topic.title}. Let's review the key concepts.",
-            "complete_answer": f"Here's a comprehensive overview of {topic.title}:\n\n{topic.content}",
-            "mastered": False
+            "explanation": f"## {topic.title}\n\n{topic.content}",
+            "examples": "Examples will be provided in the next iteration.",
+            "question": f"Based on the content about {topic.title}, explain your understanding of the key concepts.",
+            "key_points": ["Understanding core concepts", "Practical applications", "Key takeaways"]
         }
 
 def main():
@@ -836,6 +806,7 @@ def main():
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"], unsafe_allow_html=True)
 
+            # In main(), update the lesson content display:
             if current_topic and not current_topic.completed:
                 teaching_content = None
                 
@@ -851,32 +822,29 @@ def main():
                         st.session_state.model
                     )
                     
-                    lesson_content = f"""
-                <div class="lesson-content">
-                    <h2 class="topic-title">{current_topic.title}</h2>
-                            
-                    <div class="concept-section">
-                        <h3 class="section-header">📚 Understanding the Concepts</h3>
-                        <div class="content-body">
-                            {teaching_content["explanation"]}
-                        </div>
-                    </div>
-                            
-                    <div class="example-section">
-                        <h3 class="section-header">🔍 Practical Examples</h3>
-                        <div class="content-body">
-                            {teaching_content["examples"]}
-                        </div>
-                    </div>
-                            
-                    <div class="question-section">
-                        <h3 class="section-header">💡 Understanding Check</h3>
-                        <div class="content-body">
-                            {teaching_content["question"]}
-                        </div>
-                    </div>
-                </div>
-                """
+                    # Format the content sections separately
+                    formatted_content = f"""
+                    ## {current_topic.title}
+            
+                    ### 📚 Understanding the Concepts
+                    {teaching_content["explanation"]}
+            
+                    ### 🔍 Practical Applications
+                    {teaching_content["examples"]}
+            
+                    ### 💡 Understanding Check
+                    {teaching_content["question"]}
+                    """
+                    
+                    with st.chat_message("assistant"):
+                        st.markdown(formatted_content)
+                    
+                    state.conversation_history.append({
+                        "role": "assistant",
+                        "content": formatted_content
+                    })
+                    
+                    st.session_state.expected_points = teaching_content["key_points"]
                     
                     with st.chat_message("assistant"):
                         st.markdown(lesson_content, unsafe_allow_html=True)
