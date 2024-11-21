@@ -1,3 +1,5 @@
+# Section 1: Imports and Data Classes
+```python
 import streamlit as st
 import google.generativeai as genai
 import PyPDF2
@@ -14,15 +16,18 @@ class Topic:
     subtopics: List['Topic']
     completed: bool = False
     parent: Optional['Topic'] = None
+```
 
+# Section 2: Tutorial State Management
+```python
 class TutorialState:
     def __init__(self):
         self.topics: List[Topic] = []
         self.current_topic_index: int = 0
         self.current_subtopic_index: int = -1
         self.conversation_history: List[Dict] = []
-        self.current_teaching_phase: str = "introduction"  # Phases: introduction, explanation, examples, practice
-        self.understanding_level: int = 0  # 0-100 scale
+        self.current_teaching_phase: str = "introduction"
+        self.understanding_level: int = 0
         
     def reset(self):
         self.__init__()
@@ -71,17 +76,21 @@ class TutorialState:
                 self.current_subtopic_index = -1
                 return True
             return False
+```
 
+# Section 3: Model Initialization and PDF Processing
+```python
 def init_gemini(api_key: str = None):
-    if api_key:
-        genai.configure(api_key=api_key)
-        return genai.GenerativeModel('gemini-pro')
-    return None
+    try:
+        if api_key:
+            genai.configure(api_key=api_key)
+            return genai.GenerativeModel('gemini-pro')
+        return None
+    except Exception as e:
+        st.error(f"Error initializing Gemini model: {str(e)}")
+        return None
 
 def process_pdf(pdf_file) -> str:
-    """
-    Process PDF file and extract text with better error handling and text cleaning.
-    """
     try:
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_file.read()))
         text = ""
@@ -91,12 +100,11 @@ def process_pdf(pdf_file) -> str:
                 if page_text:
                     text += page_text + "\n\n"
             except Exception as e:
-                st.warning(f"Warning: Could not process a page in the PDF. Continuing with rest of document. Error: {str(e)}")
+                st.warning(f"Warning: Could not process a page in the PDF. Error: {str(e)}")
                 continue
                 
-        # Clean and normalize the text
-        text = text.replace('\x00', '')  # Remove null bytes
-        text = ' '.join(text.split())  # Normalize whitespace
+        text = text.replace('\x00', '')
+        text = ' '.join(text.split())
         text = text.strip()
         
         if not text:
@@ -107,16 +115,13 @@ def process_pdf(pdf_file) -> str:
     except Exception as e:
         st.error(f"Error processing PDF: {str(e)}")
         raise
+```
 
+# Section 4: JSON Processing and Tutorial Structure Generation
+```python
 def clean_json_string(json_str: str) -> str:
-    """
-    More robust JSON string cleaning with better error handling.
-    """
     try:
-        # Remove any markdown formatting
         json_str = json_str.replace("```json", "").replace("```", "")
-        
-        # Find the first { and last } to extract valid JSON
         start_idx = json_str.find('{')
         end_idx = json_str.rfind('}') + 1
         
@@ -124,17 +129,7 @@ def clean_json_string(json_str: str) -> str:
             raise ValueError("No valid JSON structure found")
             
         json_str = json_str[start_idx:end_idx]
-        
-        # Clean up common formatting issues
-        json_str = json_str.replace('\n', ' ')
-        json_str = json_str.replace('\r', ' ')
-        json_str = json_str.replace('\t', ' ')
         json_str = ' '.join(json_str.split())
-        
-        # Fix common JSON syntax issues
-        json_str = json_str.replace('} {', '},{')
-        json_str = json_str.replace(']"', ']')
-        json_str = json_str.replace('""', '"')
         
         # Test if it's valid JSON
         json.loads(json_str)
@@ -145,515 +140,205 @@ def clean_json_string(json_str: str) -> str:
         raise
 
 def generate_tutorial_structure(content: str, model) -> List[Topic]:
-    """
-    Generate a structured tutorial breakdown with enhanced JSON resilience.
-    """
-    def chunk_content(text: str, max_chunk_size: int = 3000) -> List[str]:
-        paragraphs = text.split('\n\n')
-        chunks = []
-        current_chunk = []
-        current_length = 0
-        
-        for paragraph in paragraphs:
-            if current_length + len(paragraph) + 2 <= max_chunk_size:
-                current_chunk.append(paragraph)
-                current_length += len(paragraph) + 2
-            else:
-                chunks.append('\n\n'.join(current_chunk))
-                current_chunk = [paragraph]
-                current_length = len(paragraph)
-                
-        if current_chunk:
-            chunks.append('\n\n'.join(current_chunk))
-            
-        return chunks
-
-    def preprocess_json(text: str) -> str:
-        """Aggressively preprocess text to create valid JSON"""
-        # First, find the JSON-like content
-        try:
-            # Remove markdown formatting
-            text = text.replace("```json", "")
-            text = text.replace("```", "")
-            
-            # Find the first { and last }
-            start = text.find('{')
-            end = text.rfind('}')
-            if start == -1 or end == -1:
-                return "{}"
-            
-            text = text[start:end + 1]
-            
-            # Replace single quotes with double quotes
-            text = text.replace("'", '"')
-            
-            # Ensure property names are properly quoted
-            import re
-            text = re.sub(r'([{,]\s*)(\w+)(\s*:)', r'\1"\2"\3', text)
-            
-            # Remove trailing commas
-            text = re.sub(r',(\s*[}\]])', r'\1', text)
-            
-            # Properly escape special characters in content
-            text = text.replace('\n', '\\n')
-            text = text.replace('\r', '\\r')
-            text = text.replace('\t', '\\t')
-            
-            return text
-            
-        except Exception as e:
-            st.warning(f"Error preprocessing JSON: {str(e)}")
-            return "{}"
-
-    def safe_parse_response(response_text: str, context: str = "") -> dict:
-        """Safely parse model response into structured data"""
-        try:
-            # Clean and parse JSON
-            json_str = preprocess_json(response_text)
-            return json.loads(json_str)
-        except Exception as e:
-            st.warning(f"Error parsing {context}: {str(e)}")
-            # Return empty structure
-            return {
-                "title": "Error parsing content",
-                "lessons": []
-            }
-
     try:
-        # Initial analysis with very explicit prompt format
         analysis_prompt = f"""
-        Create a learning structure for this content. Return only a JSON object in this exact format:
-        
+        Create a learning structure for this content. Return a JSON object with exactly this structure:
         {{
             "title": "Main Topic Title",
             "lessons": [
                 {{
-                    "title": "Lesson 1 Title",
-                    "content": "Lesson content",
-                    "key_points": ["point 1", "point 2"],
-                    "practice": ["practice item 1"],
-                    "prerequisites": [],
+                    "title": "Specific Lesson Title",
+                    "content": "Clear explanation",
+                    "key_points": ["Point 1", "Point 2"],
+                    "practice": ["Practice item 1"],
                     "difficulty": "beginner"
                 }}
             ]
         }}
-
-        Content:
-        {content[:3000]}
+        Content: {content[:3000]}
         """
         
-        # Get initial analysis
         response = model.generate_content(analysis_prompt)
-        initial_structure = safe_parse_response(response.text, "initial analysis")
+        structure = json.loads(clean_json_string(response.text))
         
-        # Process content in chunks
-        chunks = chunk_content(content)
-        all_topics = []
-        
-        # Track prerequisites and sequence
-        topic_prereqs = {}
-        topic_sequence = []
-
-        for chunk_idx, chunk in enumerate(chunks):
-            chunk_prompt = f"""
-            Create micro-lessons for this content section. 
-            Each lesson should cover ONE specific concept.
-            Return only a JSON object exactly like this:
-
-            {{
-                "lessons": [
-                    {{
-                        "title": "Specific Lesson Title",
-                        "content": "Clear explanation without quotes",
-                        "key_points": ["Point 1", "Point 2"],
-                        "practice": ["Practice item 1"],
-                        "prerequisites": ["Prior topic"],
-                        "difficulty": "beginner"
-                    }}
-                ]
-            }}
-
-            Content section:
-            {chunk}
+        topics = []
+        for lesson in structure.get('lessons', []):
+            topic_content = f"""
+            Learning Outcome: Master {lesson['title']}
+            
+            Key Points:
+            {chr(10).join('- ' + point for point in lesson.get('key_points', []))}
+            
+            Content:
+            {lesson.get('content', '')}
+            
+            Practice:
+            {chr(10).join('- ' + practice for practice in lesson.get('practice', []))}
             """
             
-            max_retries = 2
-            for attempt in range(max_retries):
-                try:
-                    response = model.generate_content(chunk_prompt)
-                    chunk_structure = safe_parse_response(response.text, f"chunk {chunk_idx + 1}")
-                    
-                    if "lessons" in chunk_structure:
-                        # Process each lesson
-                        for lesson in chunk_structure["lessons"]:
-                            # Check for duplicates
-                            if not any(similar_titles(existing.get('title', ''), lesson.get('title', ''))
-                                     for existing in all_topics):
-                                # Track prerequisites and sequence
-                                topic_prereqs[lesson.get('title', '')] = lesson.get('prerequisites', [])
-                                topic_sequence.append(lesson.get('title', ''))
-                                all_topics.append(lesson)
-                        break
-                except Exception as e:
-                    if attempt == max_retries - 1:
-                        st.warning(f"Failed to process chunk {chunk_idx + 1}: {str(e)}")
-                    time.sleep(1)
-
-        def similar_titles(title1: str, title2: str) -> bool:
-            """Check for similar titles"""
-            if not title1 or not title2:
-                return False
-            title1_words = set(title1.lower().strip().split())
-            title2_words = set(title2.lower().strip().split())
-            common_words = title1_words & title2_words
-            return len(common_words) >= min(len(title1_words), len(title2_words)) * 0.7
-
-        # Sort topics based on prerequisites and sequence
-        def get_topic_score(topic: dict) -> tuple:
-            # Get position in original sequence
-            seq_pos = topic_sequence.index(topic.get('title', '')) if topic.get('title', '') in topic_sequence else len(topic_sequence)
-            
-            # Count prerequisites
-            prereq_count = len(topic_prereqs.get(topic.get('title', ''), []))
-            
-            # Get difficulty score
-            diff_map = {'beginner': 0, 'intermediate': 1, 'advanced': 2}
-            diff_score = diff_map.get(topic.get('difficulty', 'beginner'), 0)
-            
-            return (prereq_count, diff_score, seq_pos)
-
-        # Sort topics
-        all_topics.sort(key=get_topic_score)
-
-        # Convert to Topic objects
-        def create_topic(topic_data: dict) -> Topic:
-            content = f"""Learning Outcome:
-Master the concept of {topic_data.get('title', 'this topic')}
-
-Key Points:
-{chr(10).join('- ' + point for point in topic_data.get('key_points', []))}
-
-Content:
-{topic_data.get('content', '')}
-
-Practice Activities:
-{chr(10).join('- ' + practice for practice in topic_data.get('practice', []))}
-
-Prerequisites:
-{chr(10).join('- ' + prereq for prereq in topic_data.get('prerequisites', []))}
-"""
-            return Topic(
-                title=topic_data.get('title', 'Untitled Topic'),
-                content=content,
-                subtopics=[],
-                completed=False,
-                parent=None
-            )
-
-        final_topics = [create_topic(t) for t in all_topics if isinstance(t, dict)]
-        
-        if not final_topics:
-            st.warning("No valid topics generated, creating default structure")
-            final_topics = [
-                Topic(
-                    title=initial_structure.get('title', 'Getting Started'),
-                    content="Introduction to the subject matter.",
-                    subtopics=[],
-                    completed=False
-                )
-            ]
-        
-        return final_topics
-        
-    except Exception as e:
-        st.error(f"Error in tutorial structure generation: {str(e)}")
-        return [
-            Topic(
-                title="Getting Started",
-                content="Introduction to the subject matter.",
+            topics.append(Topic(
+                title=lesson.get('title', 'Untitled Topic'),
+                content=topic_content,
                 subtopics=[],
                 completed=False
-            )
-        ]
-
-def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
-    """
-    Generate focused micro-learning content with clear progression and validation points.
-    """
-    # Create context from conversation history
-    previous_topics = []
-    for msg in conversation_history:
-        if msg["role"] == "assistant" and "<h2>" in msg["content"]:
-            topic_title = msg["content"].split("<h2>")[1].split("</h2>")[0]
-            previous_topics.append(topic_title)
-
-    prompt = f"""
-    Create a focused micro-lesson about: {topic.title}
-    Previous topics covered: {', '.join(previous_topics) if previous_topics else 'This is the first topic'}
-    
-    Guidelines:
-    1. Focus on ONE specific concept or skill
-    2. Content should be concise but thorough
-    3. Use clear, simple language
-    4. Include only the most relevant examples
-    5. Ask focused questions that test understanding of the specific concept
-    
-    Return a JSON object with this exact structure:
-    {{
-        "micro_lesson": {{
-            "concept": {{
-                "title": "Clear, specific concept title",
-                "key_point": "One main point to remember",
-                "explanation": "2-3 clear sentences explaining the concept"
-            }},
-            "practical_example": {{
-                "scenario": "A single, clear real-world example",
-                "steps": ["Step 1", "Step 2", "Step 3"],
-                "key_consideration": "One important thing to remember"
-            }},
-            "understanding_check": {{
-                "question": "A specific question testing understanding of this concept",
-                "expected_elements": ["Point 1", "Point 2", "Point 3"]
-            }}
-        }}
-    }}
-    """
-    
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = model.generate_content(prompt)
-            response_text = clean_json_string(response.text)
-            content = json.loads(response_text)
-            
-            # Format the content with clear visual separation
-            formatted_content = f"""## {content['micro_lesson']['concept']['title']}
-
-### 📚 Key Concept
-{content['micro_lesson']['concept']['explanation']}
-
-**Remember:** {content['micro_lesson']['concept']['key_point']}
-
-### 🔍 Real-World Example
-{content['micro_lesson']['practical_example']['scenario']}
-
-Steps:
-"""
-            for step in content['micro_lesson']['practical_example']['steps']:
-                formatted_content += f"* {step}\n"
-                
-            formatted_content += f"\n**Important:** {content['micro_lesson']['practical_example']['key_consideration']}\n\n"
-            
-            formatted_content += f"""### 💡 Check Your Understanding
-{content['micro_lesson']['understanding_check']['question']}"""
-            
-            return {
-                "explanation": formatted_content,
-                "expected_points": content['micro_lesson']['understanding_check']['expected_elements'],
-                "question": content['micro_lesson']['understanding_check']['question']
-            }
-            
-        except Exception as e:
-            if attempt == max_retries - 1:
-                st.error(f"Failed to generate teaching content after {max_retries} attempts: {str(e)}")
-                return {
-                    "explanation": f"""## {topic.title}
-
-### 📚 Key Concept
-{topic.content}
-
-### 🔍 Real-World Example
-Practice applying this concept in a simple scenario.
-
-### 💡 Check Your Understanding
-Can you explain the key points of {topic.title}?
-""",
-                    "expected_points": ["Understanding of basic concept", "Application of concept", "Key considerations"],
-                    "question": f"Can you explain the key points of {topic.title}?"
-                }
-            time.sleep(1)
-def evaluate_response(user_response: str, expected_points: List[str], current_topic: Topic, model) -> dict:
-    """
-    Evaluate user's response against expected learning points.
-    
-    Args:
-        user_response: The user's answer text
-        expected_points: List of key points that should be covered
-        current_topic: Current topic being discussed
-        model: The AI model instance
-    
-    Returns:
-        dict: Contains feedback and complete answer
-    """
-    prompt = f"""
-    Evaluate this response about {current_topic.title}.
-    
-    User's response:
-    {user_response}
-    
-    Expected key points:
-    {" - " + "\n - ".join(expected_points)}
-    
-    Provide an evaluation in this JSON format:
-    {{
-        "feedback": "Detailed, constructive feedback on the response, highlighting strengths and areas for improvement",
-        "complete_answer": "A comprehensive explanation of the topic, incorporating all key points",
-        "understanding_level": "A number from 0-100 indicating comprehension level"
-    }}
-    
-    Make the feedback encouraging but thorough. Include specific examples from their response.
-    """
-    
-    try:
-        response = model.generate_content(prompt)
-        response_text = clean_json_string(response.text)
-        evaluation = json.loads(response_text)
+            ))
         
-        # Format the feedback and complete answer with markdown
-        formatted_feedback = f"""
-#### Feedback on Your Understanding
-{evaluation['feedback']}
+        return topics if topics else [Topic(
+            title="Getting Started",
+            content="Introduction to the subject matter.",
+            subtopics=[],
+            completed=False
+        )]
+        
+    except Exception as e:
+        st.error(f"Error generating tutorial structure: {str(e)}")
+        return [Topic(
+            title="Getting Started",
+            content="Introduction to the subject matter.",
+            subtopics=[],
+            completed=False
+        )]
+```
 
-#### Complete Explanation
-{evaluation['complete_answer']}
-
-Understanding Level: {evaluation['understanding_level']}%
-"""
+# Section 5: Teaching Content Generation and Evaluation
+```python
+def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
+    try:
+        prompt = f"""
+        Create a micro-lesson about: {topic.title}
+        Return a JSON object with exactly this structure:
+        {{
+            "explanation": "Clear explanation of the concept",
+            "examples": "Practical example or demonstration",
+            "question": "Understanding check question",
+            "key_points": ["Expected point 1", "Expected point 2"]
+        }}
+        """
+        
+        response = model.generate_content(prompt)
+        content = json.loads(clean_json_string(response.text))
         
         return {
-            "feedback": formatted_feedback,
-            "complete_answer": evaluation['complete_answer'],
-            "understanding_level": int(evaluation['understanding_level'])
+            "explanation": content.get('explanation', ''),
+            "examples": content.get('examples', ''),
+            "question": content.get('question', ''),
+            "key_points": content.get('key_points', [])
+        }
+        
+    except Exception as e:
+        st.error(f"Error generating teaching message: {str(e)}")
+        return {
+            "explanation": topic.content,
+            "examples": "Let's practice applying this concept.",
+            "question": f"Can you explain the key points of {topic.title}?",
+            "key_points": ["Understanding of basic concept"]
+        }
+
+def evaluate_response(user_response: str, expected_points: List[str], current_topic: Topic, model) -> dict:
+    try:
+        prompt = f"""
+        Evaluate this response about {current_topic.title}.
+        User response: {user_response}
+        Expected points: {', '.join(expected_points)}
+        
+        Return a JSON object with exactly this structure:
+        {{
+            "feedback": "Specific, constructive feedback",
+            "understanding_level": 75
+        }}
+        """
+        
+        response = model.generate_content(prompt)
+        evaluation = json.loads(clean_json_string(response.text))
+        
+        return {
+            "feedback": evaluation.get('feedback', ''),
+            "understanding_level": int(evaluation.get('understanding_level', 50))
         }
         
     except Exception as e:
         st.error(f"Error evaluating response: {str(e)}")
         return {
-            "feedback": """
-#### Feedback on Your Understanding
-Thank you for your response. Let's review the key points to ensure complete understanding.
-
-#### Complete Explanation
-""" + current_topic.content,
-            "complete_answer": current_topic.content,
+            "feedback": "Thank you for your response. Keep practicing!",
             "understanding_level": 50
         }
+```
 
+# Section 6: Main Application Logic
+```python
 def main():
-    # 1. Page Configuration
     st.set_page_config(
         page_title="AI Learning Assistant",
         page_icon="🎓",
-        layout="wide",
-        initial_sidebar_state="expanded"
+        layout="wide"
     )
 
-    # 2. Custom CSS kept from original - assuming it's defined above
-
-    # 3. Initialize session state
+    # Initialize session state
     if 'tutorial_state' not in st.session_state:
         st.session_state.tutorial_state = TutorialState()
+    
+    if 'expected_points' not in st.session_state:
+        st.session_state.expected_points = []
 
-    # 4. Header
-    col1, col2 = st.columns([1, 5])
+    # Header
+    st.title("🎓 AI Learning Assistant")
+    st.markdown("Transform your learning experience with personalized AI guidance")
+
+    # API Key Management
+    api_key = None
+    try:
+        api_key = st.secrets["GEMINI_API_KEY"]
+    except:
+        api_key = st.text_input("Enter your Gemini API Key:", type="password")
+
+    if not api_key:
+        st.error("Please provide your API key to continue")
+        st.stop()
+
+    # Initialize model
+    if 'model' not in st.session_state:
+        st.session_state.model = init_gemini(api_key)
+
+    if not st.session_state.model:
+        st.error("Failed to initialize AI model")
+        st.stop()
+
+    # Main UI Layout
+    col1, col2 = st.columns([7, 3])
+
     with col1:
-        st.image("https://via.placeholder.com/80", width=80)
-    with col2:
-        st.title("AI Learning Assistant")
-        st.markdown("*Transform your learning experience with personalized AI guidance*")
-
-    # 5. Main Layout
-    main_content, sidebar = st.columns([7, 3])
-
-    # 6. Main Content Area
-    with main_content:
-        # API Key Management
-        api_key = None
-        try:
-            api_key = st.secrets["GEMINI_API_KEY"]
-        except KeyError:
-            st.markdown("""
-                <div style='background-color: #F8F9FA; padding: 1rem; border-radius: 10px; margin-bottom: 1rem;'>
-                    <h3>🔑 API Configuration</h3>
-                </div>
-            """, unsafe_allow_html=True)
-            api_key_input = st.text_input(
-                "Enter your Gemini API Key:",
-                type="password",
-                help="Get your API key from Google AI Studio",
-                placeholder="Enter your API key here..."
-            )
-            if api_key_input:
-                api_key = api_key_input
-
-        if not api_key:
-            st.error("❌ Please provide your API key to continue")
-            st.stop()
-
-        # Initialize model
-        if 'model' not in st.session_state:
-            st.session_state.model = init_gemini(api_key)
-
-        # File Upload Section
         if not st.session_state.tutorial_state.topics:
-            st.markdown("""
-                <div style='background-color: #F8F9FA; padding: 1rem; border-radius: 10px; margin: 2rem 0;'>
-                    <h3>📚 Upload Learning Material</h3>
-                    <p>Upload your educational PDF to begin the interactive learning experience.</p>
-                </div>
-            """, unsafe_allow_html=True)
-            
+            st.markdown("### 📚 Upload Learning Material")
             pdf_file = st.file_uploader("Upload Educational PDF", type="pdf")
             
             if pdf_file:
-                if pdf_file.size > 15 * 1024 * 1024:
-                    st.error("📤 File size exceeds 15MB limit")
-                    st.stop()
-
-                with st.spinner("🔄 Processing your learning material..."):
+                with st.spinner("Processing content..."):
                     try:
                         content = process_pdf(pdf_file)
-                        if not content.strip():
-                            st.error("📄 No text could be extracted from the PDF")
-                            st.stop()
-
-                        progress_bar = st.progress(0)
-                        st.info("🔍 Analyzing content and creating tutorial structure...")
-                        
-                        for i in range(100):
-                            time.sleep(0.01)
-                            progress_bar.progress(i + 1)
-                        
                         st.session_state.tutorial_state.topics = generate_tutorial_structure(
                             content, st.session_state.model
                         )
-                        st.success("✨ Tutorial structure created successfully! Let's begin learning.")
-                        time.sleep(1)
+                        st.success("Tutorial created! Let's begin.")
                         st.rerun()
-
                     except Exception as e:
-                        st.error(f"❌ Error processing content: {str(e)}")
-                        st.stop()
-
-        # Chat Interface
-        if st.session_state.tutorial_state.topics:
-            chat_container = st.container()
+                        st.error(f"Error: {str(e)}")
+        else:
+            # Chat Interface
             state = st.session_state.tutorial_state
             current_topic = state.get_current_topic()
 
-            with chat_container:
+            if current_topic and not current_topic.completed:
+                # Display conversation history
                 for message in state.conversation_history:
                     with st.chat_message(message["role"]):
-                        st.markdown(message["content"], unsafe_allow_html=True)
+                        st.markdown(message["content"])
 
-            if current_topic and not current_topic.completed:
-                # Check if we need to generate new teaching content
+                # Generate new teaching content if needed
                 if len(state.conversation_history) == 0 or (
                     len(state.conversation_history) > 0 and 
                     state.conversation_history[-1]["role"] == "assistant" and 
-                    "Moving on to the next topic" in state.conversation_history[-1]["content"]
+                    "next topic" in state.conversation_history[-1]["content"].lower()
                 ):
-                    # Generate teaching content
                     teaching_content = generate_teaching_message(
                         current_topic,
                         state.current_teaching_phase,
@@ -661,34 +346,29 @@ def main():
                         st.session_state.model
                     )
                     
-                    # Format and display the content
-                    formatted_content = f"""
+                    content = f"""
                     ## {current_topic.title}
-            
-                    ### 📚 Understanding the Concepts
-                    {teaching_content["explanation"]}
-            
-                    ### 🔍 Practical Applications
-                    {teaching_content["examples"]}
-            
-                    ### 💡 Understanding Check
-                    {teaching_content["question"]}
+
+                    {teaching_content['explanation']}
+
+                    {teaching_content['examples']}
+
+                    💡 **Check Your Understanding:**
+                    {teaching_content['question']}
                     """
                     
                     with st.chat_message("assistant"):
-                        st.markdown(formatted_content, unsafe_allow_html=True)
+                        st.markdown(content)
                     
-                    # Update conversation history
                     state.conversation_history.append({
                         "role": "assistant",
-                        "content": formatted_content
+                        "content": content
                     })
                     
-                    # Store expected points for evaluation
                     st.session_state.expected_points = teaching_content["key_points"]
-                
+
                 # Handle user input
-                user_input = st.chat_input("Share your thoughts...")
+                user_input = st.chat_input("Your response...")
                 if user_input:
                     with st.chat_message("user"):
                         st.markdown(user_input)
@@ -698,7 +378,6 @@ def main():
                         "content": user_input
                     })
                     
-                    # Generate and display evaluation
                     evaluation = evaluate_response(
                         user_input,
                         st.session_state.expected_points,
@@ -706,82 +385,47 @@ def main():
                         st.session_state.model
                     )
                     
-                    evaluation_response = f"""
-                    <div class="evaluation-content">
-                        <div class="feedback-section">
-                            <h3>💭 Feedback on Your Response</h3>
-                            {evaluation['feedback']}
-                        </div>
-                        <div class="complete-answer-section">
-                            <h3>📝 Complete Explanation</h3>
-                            {evaluation['complete_answer']}
-                        </div>
-                        <div class="next-topic-prompt">
-                            <hr>
-                            <p><em>🎯 Moving on to the next topic...</em></p>
-                        </div>
-                    </div>
+                    feedback = f"""
+                    ### Feedback
+                    {evaluation['feedback']}
+                    
+                    Understanding Level: {evaluation['understanding_level']}%
+                    
+                    ---
+                    *Moving to next topic...*
                     """
                     
                     with st.chat_message("assistant"):
-                        st.markdown(evaluation_response, unsafe_allow_html=True)
+                        st.markdown(feedback)
                     
                     state.conversation_history.append({
                         "role": "assistant",
-                        "content": evaluation_response
+                        "content": feedback
                     })
                     
-                    # Mark current topic as completed
-                    current_topic.completed = True
-                    
-                    # Advance to next topic or show completion
-                    if state.advance_topic():
-                        st.rerun()
-                    else:
-                        st.balloons()
-                        st.markdown("""
-                        <div class="completion-message">
-                            <h2>🎉 Congratulations!</h2>
-                            <p>You've successfully completed the tutorial!</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-    # 7. Sidebar
-    with sidebar:
+                    if evaluation['understanding_level'] >= 70:
+                        current_topic.completed = True
+                        if state.advance_topic():
+                            st.rerun()
+                        else:
+                            st.balloons()
+                            st.success("🎉 Congratulations! You've completed the tutorial!")
+    
+    with col2:
         if st.session_state.tutorial_state.topics:
-            st.markdown("""
-                <div style='background-color: #F8F9FA; padding: 1rem; border-radius: 10px; margin-bottom: 1rem;'>
-                    <h3>📊 Learning Progress</h3>
-                </div>
-            """, unsafe_allow_html=True)
-
-            if current_topic:
-                completed_topics = sum(1 for t in st.session_state.tutorial_state.topics if t.completed)
-                total_topics = len(st.session_state.tutorial_state.topics)
-                progress = int((completed_topics / total_topics) * 100)
-                
-                st.progress(progress)
-                st.info(f"📍 Current Topic: {current_topic.title}")
-                st.write(f"🎯 Phase: {state.current_teaching_phase.title()}")
-
-            st.markdown("""
-                <div style='background-color: #F8F9FA; padding: 1rem; border-radius: 10px; margin: 1rem 0;'>
-                    <h3>📑 Topic Overview</h3>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown("### 📊 Progress")
+            completed = sum(1 for t in state.topics if t.completed)
+            progress = int((completed / len(state.topics)) * 100)
+            st.progress(progress)
             
+            st.markdown("### 📑 Topics")
             for i, topic in enumerate(state.topics, 1):
                 status = "✅" if topic.completed else "📍" if topic == current_topic else "⭕️"
-                st.markdown(f"<div style='margin: 0.5rem 0;'>{status} **{i}. {topic.title}**</div>", unsafe_allow_html=True)
-                for j, subtopic in enumerate(topic.subtopics, 1):
-                    status = "✅" if subtopic.completed else "📍" if subtopic == current_topic else "⭕️"
-                    st.markdown(f"<div style='margin: 0.3rem 0 0.3rem 2rem;'>{status} {i}.{j} {subtopic.title}</div>", unsafe_allow_html=True)
-
-            st.markdown("<div style='margin-top: 2rem;'>", unsafe_allow_html=True)
+                st.markdown(f"{status} {i}. {topic.title}")
+            
             if st.button("🔄 Reset Tutorial"):
                 st.session_state.tutorial_state.reset()
                 st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
