@@ -293,16 +293,16 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     """
     Generate cohesive, well-structured teaching content with improved formatting.
-    Maintains original logic while fixing JSON generation.
+    Maintains original logic while fixing formatting issues.
     """
-    # Create context from conversation history
+    # Keep existing conversation history logic
     previous_topics = []
     for msg in conversation_history:
         if msg["role"] == "assistant" and "<h2>" in msg["content"]:
             topic_title = msg["content"].split("<h2>")[1].split("</h2>")[0]
             previous_topics.append(topic_title)
 
-    # Keep original prompt structure but ensure JSON formatting
+    # Keep original prompt but ensure consistent formatting in response
     prompt = f"""
     Create a comprehensive, well-structured lesson about: {topic.title}
     
@@ -336,27 +336,18 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
     - Encourage critical thinking
     - Allow for demonstration of practical application
     
-    Return a valid JSON object in this exact format:
+    Return the lesson in this exact JSON format:
     {{
-        "explanation": {{
-            "introduction": "2-3 sentences introducing the main concept",
-            "sections": [
-                {{
-                    "title": "Section Title",
-                    "content": "Main content of the section",
-                    "bullets": ["point 1", "point 2", "point 3"]
-                }}
-            ]
-        }},
+        "explanation": "Main explanation text with section headings in markdown format",
         "examples": [
             {{
-                "title": "Example Title",
-                "scenario": "Scenario description",
-                "steps": ["step 1", "step 2", "step 3"]
+                "title": "Title of example",
+                "scenario": "Description of the scenario",
+                "steps": ["Step 1", "Step 2", "Step 3"]
             }}
         ],
-        "question": "A specific question to test understanding",
-        "key_points": ["key point 1", "key point 2", "key point 3"]
+        "question": "Understanding check question",
+        "key_points": ["Key point 1", "Key point 2", "Key point 3"]
     }}
     """
     
@@ -365,60 +356,54 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
         try:
             response = model.generate_content(prompt)
             response_text = clean_json_string(response.text)
-            content = json.loads(response_text)
+            lesson_content = json.loads(response_text)
             
-            # Format the content with clear structure and spacing
+            # Format the content with proper spacing and no duplicates
             formatted_content = f"""## {topic.title}
 
 ### 📚 Understanding the Concepts
 
-{content['explanation']['introduction']}
+{lesson_content["explanation"]}
+
+### 🔍 Practical Applications
 
 """
-            # Add sections
-            for section in content['explanation']['sections']:
-                formatted_content += f"""#### {section['title']}
-{section['content']}
-
-"""
-                if section['bullets']:
-                    for bullet in section['bullets']:
-                        formatted_content += f"* {bullet}\n"
-                formatted_content += "\n"
-
-            # Add examples
-            formatted_content += "### 🔍 Practical Applications\n\n"
-            for i, example in enumerate(content['examples'], 1):
+            # Format examples with proper bullet points
+            for i, example in enumerate(lesson_content["examples"], 1):
                 formatted_content += f"""#### Example {i}: {example['title']}
 {example['scenario']}
 
 Steps:
 """
                 for step in example['steps']:
+                    # Clean up any existing numbering and ensure bullet point format
+                    step = step.strip()
+                    if step[0].isdigit():
+                        step = step.split('.', 1)[1].strip()
                     formatted_content += f"* {step}\n"
                 formatted_content += "\n"
 
             # Add understanding check
             formatted_content += f"""### 💡 Understanding Check
 
-{content['question']}
+{lesson_content["question"]}
 
 #### Key Points:
 """
-            for point in content['key_points']:
+            for point in lesson_content["key_points"]:
                 formatted_content += f"* {point}\n"
             
             return {
                 "explanation": formatted_content,
-                "examples": content['examples'],
-                "question": content['question'],
-                "key_points": content['key_points']
+                "examples": lesson_content["examples"],
+                "question": lesson_content["question"],
+                "key_points": lesson_content["key_points"]
             }
             
         except Exception as e:
             if attempt == max_retries - 1:
                 st.error(f"Failed to generate teaching content after {max_retries} attempts: {str(e)}")
-                # Return a basic formatted version if all attempts fail
+                # Keep existing fallback content
                 return {
                     "explanation": f"""## {topic.title}
 
