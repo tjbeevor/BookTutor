@@ -146,9 +146,8 @@ def clean_json_string(json_str: str) -> str:
 
 def generate_tutorial_structure(content: str, model) -> List[Topic]:
     """
-    Generate a more robust tutorial structure with improved content chunking and error handling.
+    Generate a more robust tutorial structure with improved content organization and hierarchy.
     """
-    # Split content into manageable chunks
     def chunk_content(text: str, max_chunk_size: int = 4000) -> List[str]:
         words = text.split()
         chunks = []
@@ -170,33 +169,71 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
         return chunks
 
     try:
-        # Process content in chunks
+        # Initial analysis prompt to understand document structure
+        analysis_prompt = """
+        Analyze this educational content and identify:
+        1. The main subject or field being covered
+        2. The natural progression of topics (e.g., fundamentals to advanced)
+        3. Any prerequisites or dependent relationships between concepts
+        4. Key learning objectives
+        
+        Return the analysis in this JSON format:
+        {
+            "main_subject": "The primary subject area",
+            "learning_objectives": ["objective 1", "objective 2", ...],
+            "topic_dependencies": [
+                {
+                    "topic": "Topic name",
+                    "prerequisites": ["prerequisite 1", "prerequisite 2"]
+                }
+            ],
+            "suggested_progression": ["topic 1", "topic 2", ...]
+        }
+        """
+        
+        # Get initial analysis for better organization
+        response = model.generate_content(analysis_prompt + "\n\nContent:\n" + content[:4000])
+        analysis = json.loads(clean_json_string(response.text))
+        
+        # Process content in chunks with improved organization
         chunks = chunk_content(content)
         all_topics = []
         
         for chunk_idx, chunk in enumerate(chunks):
             prompt = f"""
             Create a structured tutorial outline for the following content.
-            Focus on identifying main topics and breaking them down into logical subtopics.
-            Keep the structure focused and coherent.
-
-            Rules:
-            1. Each topic should be clear and self-contained
-            2. Topics should flow logically from basic to advanced concepts
-            3. Include 2-3 sentences of explanatory content for each topic/subtopic
-            4. Ensure subtopics are directly related to their parent topic
-
+            This content is about: {analysis['main_subject']}
+            
+            Key Learning Objectives:
+            {' - ' + '\n - '.join(analysis['learning_objectives'])}
+            
+            Required Topic Progression:
+            {' -> '.join(analysis['suggested_progression'])}
+            
+            Guidelines:
+            1. Topics must align with the natural learning progression identified above
+            2. Each topic should clearly build upon previous knowledge
+            3. Complex topics should be broken down into prerequisite subtopics
+            4. Content should directly support the learning objectives
+            5. Each topic/subtopic needs 2-3 sentences of explanatory content that:
+               - Explains why this topic is important
+               - Connects it to the broader learning objectives
+               - Highlights relationships with other topics
+            
             Return the structure as valid JSON in this format:
             {{
                 "topics": [
                     {{
                         "title": "Main Topic Title",
-                        "content": "Clear explanation of the topic",
+                        "content": "Clear explanation with context and importance",
+                        "learning_objective": "Which learning objective this supports",
+                        "prerequisites": ["prerequisite topics"],
                         "subtopics": [
                             {{
                                 "title": "Subtopic Title",
-                                "content": "Detailed subtopic explanation",
-                                "subtopics": []
+                                "content": "Detailed explanation with connections to main topic",
+                                "learning_objective": "Specific learning objective",
+                                "prerequisites": []
                             }}
                         ]
                     }}
@@ -225,9 +262,34 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
                     if attempt == max_retries - 1:
                         st.error(f"Failed to process chunk {chunk_idx + 1} after {max_retries} attempts")
                         raise
-                    time.sleep(1)  # Brief pause before retry
+                    time.sleep(1)
 
-        # Merge and organize topics
+        # Enhanced topic organization and merging
+        def organize_topics(topics: List[dict], progression: List[str]) -> List[dict]:
+            # Sort topics based on progression
+            organized = []
+            for prog_topic in progression:
+                for topic in topics:
+                    if similar_titles(topic["title"], prog_topic):
+                        organized.append(topic)
+                        break
+            
+            # Add any remaining topics at the end
+            organized.extend([t for t in topics if not any(similar_titles(t["title"], ot["title"]) for ot in organized)])
+            return organized
+
+        def similar_titles(title1: str, title2: str) -> bool:
+            # Enhanced similarity check
+            title1_words = set(title1.lower().strip().split())
+            title2_words = set(title2.lower().strip().split())
+            return (title1_words.issubset(title2_words) or 
+                   title2_words.issubset(title1_words) or
+                   len(title1_words & title2_words) >= min(len(title1_words), len(title2_words)) // 2)
+
+        # Organize topics based on progression
+        all_topics = organize_topics(all_topics, analysis['suggested_progression'])
+
+        # Convert to Topic objects with enhanced organization
         def create_topics(topic_data: dict, parent: Optional[Topic] = None) -> Topic:
             topic = Topic(
                 title=topic_data["title"],
@@ -237,49 +299,36 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
                 parent=parent
             )
             
-            # Create subtopics
-            for subtopic_data in topic_data.get("subtopics", []):
+            # Sort subtopics based on prerequisites
+            subtopics_data = topic_data.get("subtopics", [])
+            prereq_map = {st["title"]: st.get("prerequisites", []) for st in subtopics_data}
+            
+            # Topological sort for subtopics
+            sorted_subtopics = []
+            visited = set()
+            
+            def visit(subtopic):
+                if subtopic["title"] in visited:
+                    return
+                visited.add(subtopic["title"])
+                for prereq in prereq_map[subtopic["title"]]:
+                    for st in subtopics_data:
+                        if similar_titles(st["title"], prereq):
+                            visit(st)
+                sorted_subtopics.append(subtopic)
+            
+            for subtopic in subtopics_data:
+                if subtopic["title"] not in visited:
+                    visit(subtopic)
+            
+            # Create subtopics in proper order
+            for subtopic_data in sorted_subtopics:
                 subtopic = create_topics(subtopic_data, topic)
                 topic.subtopics.append(subtopic)
                 
             return topic
 
-        # Convert all topics to Topic objects
         final_topics = [create_topics(t) for t in all_topics]
-        
-        # Remove duplicates and merge similar topics
-        def merge_similar_topics(topics: List[Topic]) -> List[Topic]:
-            merged = []
-            for topic in topics:
-                # Check if similar topic exists
-                similar_found = False
-                for existing in merged:
-                    if similar_titles(existing.title, topic.title):
-                        # Merge content and subtopics
-                        existing.content = combine_content(existing.content, topic.content)
-                        existing.subtopics.extend(topic.subtopics)
-                        similar_found = True
-                        break
-                        
-                if not similar_found:
-                    merged.append(topic)
-                    
-            return merged
-
-        def similar_titles(title1: str, title2: str) -> bool:
-            # Simple similarity check - can be improved
-            title1 = title1.lower().strip()
-            title2 = title2.lower().strip()
-            return (title1 in title2 or title2 in title1 or
-                   len(set(title1.split()) & set(title2.split())) >= 2)
-
-        def combine_content(content1: str, content2: str) -> str:
-            # Combine unique content
-            sentences1 = set(content1.split('. '))
-            sentences2 = set(content2.split('. '))
-            return '. '.join(sentences1 | sentences2)
-
-        final_topics = merge_similar_topics(final_topics)
         
         if not final_topics:
             raise ValueError("No valid topics could be generated from the content")
