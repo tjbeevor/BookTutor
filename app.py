@@ -5,171 +5,250 @@ import google.generativeai as genai
 import PyPDF2
 import docx
 import io
-import concurrent.futures
 from functools import lru_cache
-import time
+
+# Configure page
+st.set_page_config(page_title="AI Teaching Assistant", layout="wide")
 
 # Custom CSS for better UI
-st.set_page_config(page_title="AI Teaching Assistant", layout="wide")
 st.markdown("""
 <style>
-    /* Modern color scheme */
-    :root {
-        --primary-color: #4A90E2;
-        --secondary-color: #2ECC71;
-        --background-color: #F7F9FC;
-        --text-color: #2C3E50;
+    .stApp {
+        max-width: 1200px;
+        margin: 0 auto;
     }
-    
-    /* Typography */
-    h1, h2, h3 {
-        color: var(--text-color);
-        font-family: 'Inter', sans-serif;
-        font-weight: 600;
+    .main > div {
+        padding: 2rem;
     }
-    
-    /* Card-like containers */
-    .stTextInput, .stTextArea {
-        background-color: white;
-        border-radius: 10px;
-        padding: 20px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    .stButton > button {
+        width: 100%;
+        border-radius: 5px;
+        height: 3em;
+        background-color: #4A90E2;
+        color: white;
     }
-    
-    /* Button styling */
-    .stButton button {
-        border-radius: 20px;
-        padding: 10px 25px;
-        font-weight: 500;
-        transition: all 0.3s ease;
+    .stTextArea > div > div > textarea {
+        border-radius: 5px;
     }
-    
-    .stButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    
-    /* Progress indicators */
-    .topic-progress {
-        padding: 10px;
-        margin: 5px 0;
-        border-radius: 8px;
-        transition: all 0.3s ease;
-    }
-    
-    .topic-progress:hover {
-        background-color: #f0f2f5;
-    }
-    
-    /* Loading animations */
-    .stSpinner {
-        border-width: 3px;
-    }
-    
-    /* File uploader */
-    .uploadedFile {
-        border-radius: 10px;
+    .upload-section {
         border: 2px dashed #4A90E2;
-        padding: 20px;
+        border-radius: 10px;
+        padding: 2rem;
+        margin: 2rem 0;
+        text-align: center;
     }
-    
-    /* Feedback sections */
     .feedback-box {
         background-color: #f8f9fa;
-        border-left: 4px solid var(--primary-color);
-        padding: 15px;
-        margin: 10px 0;
-        border-radius: 0 8px 8px 0;
+        border-left: 4px solid #4A90E2;
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 0 5px 5px 0;
+    }
+    .topic-header {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 5px;
+        margin-bottom: 2rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
-@lru_cache(maxsize=32)
-def clean_json_string(json_str: str) -> str:
-    """Cache-optimized JSON string cleaner"""
-    start = json_str.find('{')
-    end = json_str.rfind('}') + 1
-    if start == -1 or end == 0:
-        raise ValueError("No valid JSON found in string")
-    return json_str[start:end]
-
-def process_uploaded_file(uploaded_file) -> Dict:
-    """Optimized file processing with chunking for large files"""
-    content = {"text": "", "structure": {"sections": []}}
-    CHUNK_SIZE = 1024 * 1024  # 1MB chunks
+def initialize_model():
+    """Initialize or get the Google Gemini model"""
+    try:
+        # Check if API key is in session state
+        if 'gemini_api_key' not in st.session_state:
+            st.session_state.gemini_api_key = st.secrets.get('GOOGLE_API_KEY', '')
+        
+        if not st.session_state.gemini_api_key:
+            st.session_state.gemini_api_key = st.text_input(
+                'Enter Google API Key:', 
+                type='password'
+            )
+            if not st.session_state.gemini_api_key:
+                st.warning('Please enter your Google API key to continue.')
+                return None
+        
+        # Configure the Gemini API
+        genai.configure(api_key=st.session_state.gemini_api_key)
+        
+        # Initialize the model
+        return genai.GenerativeModel('gemini-pro')
     
-    try:
-        if uploaded_file.type == "application/pdf":
-            with st.spinner("Processing PDF... This might take a moment for large files"):
-                pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
-                
-                # Process pages in parallel
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    text_chunks = list(executor.map(
-                        lambda page: page.extract_text(),
-                        pdf_reader.pages
-                    ))
-                content["text"] = " ".join(text_chunks)
-                
-        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            doc = docx.Document(io.BytesIO(uploaded_file.read()))
-            # Process paragraphs in chunks
-            content["text"] = " ".join([p.text for p in doc.paragraphs])
-            
-        elif uploaded_file.type == "text/markdown":
-            content["text"] = uploaded_file.read().decode()
-        
-        # Improved section detection with caching
-        return process_sections(content)
-        
     except Exception as e:
-        st.error(f"Error processing file: {str(e)}")
-        return {"text": "", "structure": {"sections": []}}
+        st.error(f"Error initializing Gemini model: {str(e)}")
+        return None
 
-@lru_cache(maxsize=16)
-def process_sections(content: Dict) -> Dict:
-    """Cache-optimized section processing"""
+def process_text_from_file(file_content, file_type) -> str:
+    """Extract text from different file types"""
     try:
-        paragraphs = content["text"].split("\n\n")
-        sections = []
-        current_section = {"title": "Introduction", "content": []}
-        
-        for para in paragraphs:
-            if para.strip().isupper() or para.strip().endswith(":"):
-                if current_section["content"]:
-                    sections.append(dict(current_section))
-                current_section = {"title": para.strip(), "content": []}
-            else:
-                current_section["content"].append(para)
-        
-        if current_section["content"]:
-            sections.append(dict(current_section))
-        
-        return {"text": content["text"], "structure": {"sections": sections}}
+        if file_type == "application/pdf":
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+            return " ".join(page.extract_text() for page in pdf_reader.pages)
+            
+        elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(io.BytesIO(file_content))
+            return " ".join(paragraph.text for paragraph in doc.paragraphs)
+            
+        elif file_type == "text/markdown":
+            return file_content.decode()
+            
+        else:
+            raise ValueError(f"Unsupported file type: {file_type}")
     except Exception as e:
-        st.error(f"Error in section processing: {str(e)}")
-        return {"text": content["text"], "structure": {"sections": []}}
+        raise Exception(f"Error processing file content: {str(e)}")
 
 def process_uploaded_file(uploaded_file) -> Dict:
     """Process uploaded file and extract content"""
     try:
-        if uploaded_file.type == "application/pdf":
-            pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
-            text_content = " ".join([page.extract_text() for page in pdf_reader.pages])
-        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            doc = docx.Document(io.BytesIO(uploaded_file.read()))
-            text_content = " ".join([p.text for p in doc.paragraphs])
-        elif uploaded_file.type == "text/markdown":
-            text_content = uploaded_file.read().decode()
-        else:
-            raise ValueError(f"Unsupported file type: {uploaded_file.type}")
+        # Read file content
+        file_content = uploaded_file.read()
         
-        content = {"text": text_content}
-        return process_sections(content)
+        # Extract text based on file type
+        text_content = process_text_from_file(file_content, uploaded_file.type)
         
+        # Create basic structure
+        return {
+            "text": text_content,
+            "structure": {
+                "sections": create_sections(text_content)
+            }
+        }
     except Exception as e:
         st.error(f"Error processing file: {str(e)}")
         return {"text": "", "structure": {"sections": []}}
+
+def create_sections(text: str) -> List[Dict]:
+    """Create sections from text content"""
+    sections = []
+    current_section = {"title": "Introduction", "content": []}
+    
+    for paragraph in text.split('\n\n'):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+            
+        if paragraph.isupper() or paragraph.endswith(':'):
+            if current_section["content"]:
+                sections.append(dict(current_section))
+            current_section = {"title": paragraph, "content": []}
+        else:
+            current_section["content"].append(paragraph)
+    
+    if current_section["content"]:
+        sections.append(dict(current_section))
+    
+    return sections
+
+class DynamicTeacher:
+    def __init__(self, model):
+        self.model = model
+
+    def analyze_document(self, content: Dict[str, Any]) -> List[Dict]:
+        """Initial document analysis to create learning structure"""
+        try:
+            text_content = content['text']
+            
+            prompt = f"""
+            Analyze this educational content and create a learning structure.
+            Content: {text_content[:2000]}...
+
+            Create a structured learning path that:
+            1. Identifies main topics to be taught
+            2. Sequences them logically
+            3. Identifies key points for each topic
+
+            Return the structure as JSON with this format:
+            {{
+                "topics": [
+                    {{
+                        "title": "Topic title",
+                        "key_points": ["point 1", "point 2"],
+                        "content": "Relevant content from the document",
+                        "teaching_style": "conceptual|technical|practical",
+                        "difficulty": "beginner|intermediate|advanced"
+                    }}
+                ]
+            }}
+            """
+
+            response = self.model.generate_content(prompt)
+            structure = json.loads(response.text)
+            return structure['topics']
+
+        except Exception as e:
+            st.error(f"Error analyzing document: {str(e)}")
+            return []
+
+    def teach_topic(self, topic: Dict, user_progress: Dict) -> str:
+        """Dynamically generate teaching content"""
+        try:
+            prompt = f"""
+            Act as an expert teacher teaching this topic: {topic['title']}
+
+            Key points to cover:
+            {json.dumps(topic['key_points'], indent=2)}
+
+            Content to teach from:
+            {topic['content']}
+
+            Teaching context:
+            - Teaching style: {topic['teaching_style']}
+            - Difficulty level: {topic['difficulty']}
+            - Student progress: {user_progress.get('understanding_level', 'beginner')}
+
+            Create an engaging lesson that:
+            1. Introduces the topic clearly
+            2. Explains concepts with examples
+            3. Uses analogies when helpful
+            4. Includes practice questions
+            5. Checks for understanding
+
+            Format your response as a clear lesson with markdown formatting.
+            Include emoji for visual engagement 📚
+            Make it conversational and encouraging 🎯
+            Include practice questions at the end ✍️
+            """
+
+            response = self.model.generate_content(prompt)
+            return response.text
+
+        except Exception as e:
+            st.error(f"Error generating lesson: {str(e)}")
+            return "Error generating lesson content."
+
+    def evaluate_response(self, topic: Dict, user_response: str) -> Dict:
+        """Evaluate user's response"""
+        try:
+            prompt = f"""
+            As a teacher, evaluate this student's response to questions about: {topic['title']}
+
+            Key points that should be understood:
+            {json.dumps(topic['key_points'], indent=2)}
+
+            Student's response:
+            {user_response}
+
+            Provide evaluation as JSON:
+            {{
+                "understanding_level": 0-100,
+                "feedback": "Specific, encouraging feedback",
+                "areas_to_review": ["area1", "area2"],
+                "next_steps": "Recommendation for what to do next"
+            }}
+            """
+
+            response = self.model.generate_content(prompt)
+            return json.loads(response.text)
+
+        except Exception as e:
+            st.error(f"Error evaluating response: {str(e)}")
+            return {
+                "understanding_level": 50,
+                "feedback": "Unable to evaluate response.",
+                "areas_to_review": [],
+                "next_steps": "Please try again."
+            }
 
 def main():
     # Initialize session state
@@ -179,17 +258,34 @@ def main():
         st.session_state.current_topic = 0
     if 'user_progress' not in st.session_state:
         st.session_state.user_progress = {'understanding_level': 'beginner'}
-    if 'model' not in st.session_state:
-        st.session_state.model = initialize_model()
+    
+    # Initialize model
+    model = initialize_model()
+    if model is None:
+        st.stop()
+        return
+
+    # Store model in session state
+    st.session_state.model = model
 
     # Initialize teacher
     teacher = DynamicTeacher(st.session_state.model)
+
+    # Sidebar navigation
+    with st.sidebar:
+        st.title("📚 Learning Progress")
+        if st.session_state.topics:
+            for i, topic in enumerate(st.session_state.topics):
+                progress_status = "✅" if i < st.session_state.current_topic else "📍" if i == st.session_state.current_topic else "⭕️"
+                if st.button(f"{progress_status} {topic['title']}", key=f"topic_{i}"):
+                    st.session_state.current_topic = i
+                    st.rerun()
 
     # Main content area
     if not st.session_state.topics:
         st.markdown("""
         <div style="text-align: center; padding: 2rem;">
-            <h1 style="color: #1F4287;">📚 Welcome to AI Teaching Assistant</h1>
+            <h1>📚 Welcome to AI Teaching Assistant</h1>
             <p style="font-size: 1.2rem; color: #666; margin: 1rem 0;">
                 Upload your learning material and let AI help you master the content.
             </p>
@@ -203,10 +299,11 @@ def main():
         )
         
         if uploaded_file:
-            try:
-                with st.spinner("Processing your document..."):
+            with st.spinner("Processing your document..."):
+                try:
                     # Process document
                     content = process_uploaded_file(uploaded_file)
+                    
                     if content["text"]:
                         # Analyze content
                         topics = teacher.analyze_document(content)
@@ -217,8 +314,8 @@ def main():
                             st.error("Could not extract topics from the document. Please try a different document.")
                     else:
                         st.error("Could not extract text from the document. Please check if the file is readable.")
-            except Exception as e:
-                st.error(f"Error processing document: {str(e)}")
+                except Exception as e:
+                    st.error(f"Error processing document: {str(e)}")
 
     else:
         # Display current topic
@@ -226,11 +323,9 @@ def main():
         
         # Topic header
         st.markdown(f"""
-        <div style="background-color: #f8f9fa; padding: 1rem; border-radius: 10px; margin-bottom: 2rem;">
-            <h2 style="color: #1F4287; margin:0">{current_topic['title']}</h2>
-            <p style="color: #666; margin-top: 0.5rem;">
-                Topic {st.session_state.current_topic + 1} of {len(st.session_state.topics)}
-            </p>
+        <div class="topic-header">
+            <h2>{current_topic['title']}</h2>
+            <p>Topic {st.session_state.current_topic + 1} of {len(st.session_state.topics)}</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -256,13 +351,29 @@ def main():
                 evaluation = teacher.evaluate_response(current_topic, user_response)
             
             # Show feedback
-            st.markdown("### Feedback")
-            st.write(evaluation['feedback'])
+            st.markdown(f"""
+            <div class="feedback-box">
+                <h3>Feedback</h3>
+                <p>{evaluation['feedback']}</p>
+                <div style="margin-top: 1rem;">
+                    <div style="background-color: #e9ecef; height: 8px; border-radius: 4px;">
+                        <div style="background-color: {'#2ECC71' if evaluation['understanding_level'] >= 70 else '#4A90E2'}; 
+                             width: {evaluation['understanding_level']}%; 
+                             height: 100%; 
+                             border-radius: 4px;">
+                        </div>
+                    </div>
+                    <p style="text-align: right; color: #666; margin-top: 0.25rem;">
+                        Understanding Level: {evaluation['understanding_level']}%
+                    </p>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             
             if evaluation['areas_to_review']:
                 st.markdown("### Areas to Review")
                 for area in evaluation['areas_to_review']:
-                    st.write(f"- {area}")
+                    st.markdown(f"- {area}")
             
             # Update progress if understanding is good
             if evaluation['understanding_level'] >= 70:
