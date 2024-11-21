@@ -292,27 +292,55 @@ def generate_tutorial_structure(content: str, model) -> List[Topic]:
 
 def generate_teaching_message(topic: Topic, phase: str, conversation_history: List[Dict], model) -> dict:
     """
-    Generate more robust teaching content with improved prompting and error handling.
+    Generate more contextual and engaging teaching content.
     """
     try:
+        # Create a more detailed context from conversation history
+        previous_topics = []
+        for msg in conversation_history:
+            if msg["role"] == "assistant" and "<h2>" in msg["content"]:
+                topic_title = msg["content"].split("<h2>")[1].split("</h2>")[0]
+                previous_topics.append(topic_title)
+
         prompt = f"""
-        Create an engaging lesson about: {topic.title}
-        Main content: {topic.content}
-        Current teaching phase: {phase}
-
-        Create content that is:
-        1. Clear and well-structured
-        2. Engaging and interactive
-        3. Appropriate for the current phase
-        4. Builds on previous knowledge
-        5. Includes practical applications
-
+        Create an engaging, well-structured lesson about: {topic.title}
+        
+        Context:
+        - Main topic content: {topic.content}
+        - Teaching phase: {phase}
+        - Previously covered topics: {', '.join(previous_topics) if previous_topics else 'This is the first topic'}
+        
+        Create a lesson that:
+        1. Starts with a clear introduction of the concept
+        2. Builds on any previously covered topics
+        3. Uses concrete, relatable examples
+        4. Includes interactive elements
+        5. Leads to practical applications
+        
+        The explanation should:
+        - Break down complex ideas into digestible parts
+        - Use clear, concise language
+        - Include relevant analogies or comparisons
+        - Connect to real-world applications
+        
+        The examples should:
+        - Be specific and detailed
+        - Range from simple to more complex
+        - Connect to practical applications
+        - Include step-by-step explanations where appropriate
+        
+        The question should:
+        - Directly relate to the content just covered
+        - Test understanding of key concepts
+        - Encourage critical thinking
+        - Allow for demonstration of practical application
+        
         Return the lesson as JSON in this format:
         {{
-            "explanation": "Detailed multi-paragraph explanation",
-            "examples": "Multiple practical examples",
-            "question": "Thought-provoking question to test understanding",
-            "key_points": ["Key point 1", "Key point 2", "Key point 3"]
+            "explanation": "Multi-paragraph explanation with clear structure and progression",
+            "examples": "2-3 specific, detailed examples with explanations",
+            "question": "A thought-provoking question that tests understanding of the specific content covered",
+            "key_points": ["3-4 specific key points from this lesson"]
         }}
         """
         
@@ -329,7 +357,7 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
                     raise ValueError("Missing required content sections")
                     
                 # Ensure content is substantial
-                if len(lesson_content["explanation"]) < 50:
+                if len(lesson_content["explanation"]) < 100:
                     raise ValueError("Explanation too short")
                     
                 return lesson_content
@@ -345,47 +373,46 @@ def generate_teaching_message(topic: Topic, phase: str, conversation_history: Li
         return {
             "explanation": f"Let's explore {topic.title}:\n\n{topic.content}",
             "examples": "Let's look at some practical examples...",
-            "question": "What are your thoughts on these concepts?",
+            "question": f"Based on what we've covered about {topic.title}, explain how you would apply these concepts in a practical situation.",
             "key_points": ["Understanding core concepts", "Practical applications", "Key takeaways"]
         }
 def evaluate_response(answer: str, expected_points: List[str], topic: Topic, model) -> dict:
     """
-    Evaluate user's response to a question with improved comprehension and feedback.
-    
-    Args:
-        answer (str): The user's response text
-        expected_points (List[str]): Key points that should be addressed
-        topic (Topic): Current topic being discussed
-        model: The Gemini model instance
-    
-    Returns:
-        dict: Contains feedback, complete answer, and mastery indication
+    Provide more targeted and contextual evaluation of user responses.
     """
     try:
         prompt = f"""
-        Evaluate this student response about {topic.title}.
+        Evaluate this student response about: {topic.title}
         
+        Context:
         Topic Content: {topic.content}
-        Student's Answer: {answer}
         Expected Key Points: {', '.join(expected_points)}
         
-        Evaluate the response considering:
-        1. Understanding of core concepts
-        2. Coverage of key points
-        3. Practical application
-        4. Clarity of expression
+        Student's Response: {answer}
         
-        Provide constructive feedback that:
-        1. Acknowledges correct points
-        2. Identifies areas for improvement
-        3. Offers specific suggestions
-        4. Maintains an encouraging tone
+        Provide an evaluation that:
+        1. Specifically addresses the student's response in relation to the topic
+        2. References specific parts of their answer
+        3. Connects feedback to the key points and content
+        4. Offers concrete suggestions for improvement
+        
+        The feedback should:
+        - Start with positive aspects of their response
+        - Point out specific connections they made correctly
+        - Identify specific areas where understanding could be deepened
+        - Suggest specific ways to improve understanding
+        
+        The complete answer should:
+        - Build on correct parts of their response
+        - Fill in any gaps in understanding
+        - Connect back to the main topic concepts
+        - Provide additional context where needed
         
         Return your evaluation as JSON in this format:
         {{
-            "feedback": "Detailed, constructive feedback on the response",
-            "complete_answer": "Comprehensive explanation of the topic",
-            "mastered": boolean value indicating if the response shows mastery
+            "feedback": "Specific, constructive feedback that references their actual response",
+            "complete_answer": "Comprehensive explanation that builds on their understanding",
+            "mastered": boolean indicating if they demonstrated good understanding
         }}
         """
         
@@ -401,8 +428,8 @@ def evaluate_response(answer: str, expected_points: List[str], topic: Topic, mod
                 if not all(key in evaluation for key in required_keys):
                     raise ValueError("Missing required evaluation sections")
                 
-                # Ensure feedback is substantial
-                if len(evaluation["feedback"]) < 50:
+                # Ensure feedback is substantial and specific
+                if len(evaluation["feedback"]) < 100:
                     raise ValueError("Feedback too brief")
                     
                 return evaluation
@@ -416,7 +443,7 @@ def evaluate_response(answer: str, expected_points: List[str], topic: Topic, mod
     except Exception as e:
         st.error(f"Error evaluating response: {str(e)}")
         return {
-            "feedback": "Thank you for your response. Let's review the key concepts.",
+            "feedback": f"Thank you for your thoughts on {topic.title}. Let's review the key concepts.",
             "complete_answer": f"Here's a comprehensive overview of {topic.title}:\n\n{topic.content}",
             "mastered": False
         }
